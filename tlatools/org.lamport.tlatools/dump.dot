@@ -1,0 +1,16 @@
+strict digraph DiskGraph {
+node [shape=box,style=rounded]
+nodesep=0.35;
+subgraph cluster_graph {
+color="white";
+138507037083614043 [label="/\\ maxVBal = (a1 :> -1 @@ a2 :> -1 @@ a3 :> -1)\n/\\ msgs = {}\n/\\ maxVal = (a1 :> None @@ a2 :> None @@ a3 :> None)\n/\\ maxBal = (a1 :> -1 @@ a2 :> -1 @@ a3 :> -1)\nCCIterator: Initial Action, msgs1 = {}, msgs2 = {}",style = filled]
+138507037083614043 -> 2904436887191415766;
+2904436887191415766 [label="/\\ maxVBal = (a1 :> -1 @@ a2 :> -1 @@ a3 :> -1)\n/\\ msgs = {}\n/\\ maxVal = (a1 :> None @@ a2 :> None @@ a3 :> None)\n/\\ maxBal = (a1 :> -1 @@ a2 :> -1 @@ a3 :> -1)\nCCIterator: [round = 0, BeginGuard], msgs1 = {}, msgs2 = {}"];
+2904436887191415766 -> -8279588933023625637 [label="Phase1a",color="black",fontcolor="black"];
+-8279588933023625637 [label="/\\ maxVBal = (a1 :> -1 @@ a2 :> -1 @@ a3 :> -1)\n/\\ msgs = {[type |-> \"1a\", bal |-> 0]}\n/\\ maxVal = (a1 :> None @@ a2 :> None @@ a3 :> None)\n/\\ maxBal = (a1 :> -1 @@ a2 :> -1 @@ a3 :> -1)\nCCIterator: [round = 0, send = 1], msgs1 = {}, msgs2 = {}"];
+-8279588933023625637 -> -8279588933023625637;
+{rank = same; 138507037083614043;}
+{rank = same; 2904436887191415766;}
+{rank = same; -8279588933023625637;}
+}
+}

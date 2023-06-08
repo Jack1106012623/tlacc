@@ -1,0 +1,9 @@
+digraph G {
+    size = "4,4";
+    main [shape=box];
+    main -> parse [weight=8];
+    main -> init [style=dotted];
+    main -> cleanup;
+    cleanup -> printf;
+    {rank = same; parse init printf}
+} 

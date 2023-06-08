@@ -66,6 +66,7 @@ import tla2sany.semantic.SubstInNode;
 import tla2sany.semantic.SymbolNode;
 import tla2sany.semantic.TheoremNode;
 import tlc2.TLCGlobals;
+import tlc2.cc.TLCStateMutCC;
 import tlc2.module.BuiltInModuleHelper;
 import tlc2.module.TLCBuiltInOverrides;
 import tlc2.output.EC;
@@ -795,7 +796,7 @@ public class SpecProcessor implements ValueConstants, ToolGlobals {
 			TLCStateMutExt.setVariables(this.variablesNodes);
 		} else {
 			assert mode == Mode.MC;
-			TLCStateMut.setVariables(this.variablesNodes);
+			TLCStateMutCC.setVariables(this.variablesNodes);
 		}
 
         // Apply config file overrides to operator definitions:

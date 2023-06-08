@@ -35,6 +35,7 @@ import tla2sany.semantic.SubstInNode;
 import tla2sany.semantic.SymbolNode;
 import tla2sany.semantic.ThmOrAssumpDefNode;
 import tlc2.TLCGlobals;
+import tlc2.cc.TLCStateMutCC;
 import tlc2.output.EC;
 import tlc2.output.MP;
 import tlc2.tool.Action;
@@ -199,8 +200,8 @@ public abstract class Tool
 			TLCStateMutExt.setTool(this);
 		} else {
 			// Initialize state.
-			assert TLCState.Empty instanceof TLCStateMut;
-			TLCStateMut.setTool(this);
+			assert TLCState.Empty instanceof TLCStateMutCC;
+			TLCStateMutCC.setTool(this);
 		}
       
 		Action next = this.getNextStateSpec();
@@ -451,7 +452,7 @@ public abstract class Tool
 
   protected void getInitStates(SemanticNode init, ActionItemList acts,
                                    Context c, TLCState ps, IStateFunctor states, CostModel cm) {
-        switch (init.getKind()) {
+  	switch (init.getKind()) {
         case OpApplKind:
           {
             OpApplNode init1 = (OpApplNode)init;
@@ -2279,6 +2280,7 @@ public abstract class Tool
             if (isFcnRcd && !EvalControl.isKeepLazy(control)) {
               return (Value) fval.toFcnRcd();
             }
+            
             return fval;
           }
         case OPCODE_ite:    // IfThenElse

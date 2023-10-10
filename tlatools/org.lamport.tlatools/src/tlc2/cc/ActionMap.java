@@ -22,5 +22,7 @@ public class ActionMap {
 			name2list.get(name).add(action);
 		}
 	}
-	
+	public List<Action> get(String name){
+		return name2list.get(name);
+	}
 }

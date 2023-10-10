@@ -1,6 +1,10 @@
 package tlc2.cc;
 
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import tlc2.tool.Action;
 import tlc2.tool.TLCState;
@@ -10,6 +14,10 @@ public class Rounds {
 	private ArrayList<Round> rounds = new ArrayList<>();
 	public static final int INIT_LEVEL = TLCState.INIT_LEVEL;
 	private static int CCActionCount = INIT_LEVEL;
+
+	public static String RE_Action = "(\\w+)(\\(.*\\))?";
+	public static String RE_Round = "\\["+ RE_Action + "," + RE_Action + "\\]";
+			
 	/**
 	 * @param i : Starting with 0
 	 * @return Round i
@@ -30,6 +38,51 @@ public class Rounds {
 	}
 	public boolean isLastRound(int id) {
 		return id == rounds.size()-1;
+	}
+	public void addRound(String line) {
+		Pattern pattern = Pattern.compile(RE_Round);
+        Matcher matcher = pattern.matcher(line);
+        String SendName = null, SendArgs=null, RcvName=null, RcvArgs=null;
+        if (matcher.find()) {
+            int group = 1;
+            SendName = matcher.group(group++);
+            if(SendName!="NULL"){
+                SendArgs = matcher.group(group++);
+            }
+            RcvName = matcher.group(group++);
+            if(RcvName!="NULL"){
+                RcvArgs = matcher.group(group);
+            }
+        }
+		List<Action> sendActions=null, rcvActions=null;
+		if(SendName!="NULL") {
+			sendActions = CC.actionMap.get(SendName);
+		}
+		if(RcvName!="NULL") {
+			rcvActions = CC.actionMap.get(RcvName);
+		}
+		String RoundName = "";
+		addRound(RoundName, sendActions, rcvActions);
+		
+	}
+	public void addRound(String name, List<Action> sends, List<Action> rcvs) {
+		Action[] sendActions=null, rcvActions=null;
+
+		if(sends != null){
+			sendActions = new Action[sends.size()];
+			for(int i=0; i< sends.size();i++) {
+				sendActions[i] = sends.get(i);
+			}
+		}
+		
+		if(rcvs != null) {
+			rcvActions = new Action[rcvs.size()];
+			for(int i=0; i< rcvs.size();i++) {
+				rcvActions[i] = rcvs.get(i);
+			}
+		}
+		rounds.add(new Round(name, rounds.size(), sendActions, rcvActions));
+		
 	}
 	public void addRound(String name, int[] sendIds, int[] rcvIds) {
 		Action[] sendActions=null, rcvActions=null;

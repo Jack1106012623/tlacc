@@ -26,10 +26,10 @@ import util.FilenameToStream;
  * CCTool is for communication closure.
  */
 public final class CCTool extends Tool {
-
-	public CCTool(String mainFile, String configFile, FilenameToStream resolver, Map<String, Object> params) {
+	public CCTool(String mainFile, String configFile, String roundsFile , FilenameToStream resolver, Map<String, Object> params) {
 		super(mainFile, configFile, resolver, params);
-		CC.init(this);
+		
+		CC.init(this, roundsFile);
 	}
 
 	@Override

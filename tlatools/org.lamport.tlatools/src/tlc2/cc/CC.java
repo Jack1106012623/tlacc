@@ -7,6 +7,7 @@ import tlc2.cc.CCAction.Type;
 import tlc2.tool.Action;
 import tlc2.tool.ITool;
 import tlc2.tool.TLCState;
+import tlc2.tool.impl.CCTool;
 import tlc2.value.IValue;
 import tlc2.value.impl.SetDiffValue;
 import tlc2.value.impl.Value;
@@ -26,7 +27,7 @@ public class CC  {
 	public static Action[] actions;
 	public static HashMap<Integer, Action> id2Action = new HashMap<>();
 
-	public static void init(ITool tool) {
+	public static void init(CCTool tool, String roundsFile) {
 		System.out.println("Initialize CC.");
 		
 		actions = tool.getActions();
@@ -36,7 +37,7 @@ public class CC  {
 		printActions();
 		
 		System.out.println("construct Rounds");
-		constructRounds();
+		constructRounds(roundsFile);
 		
 		System.out.println("set Empty's CCState");
 		setEmpty();
@@ -54,8 +55,11 @@ public class CC  {
 		}
 	}
 	
-	private static void constructRounds() {
-		initRaftRound();
+	private static void constructRounds(String roundsFile) {
+//		initRaftRound();
+		CC.msgs = UniqueString.uniqueStringOf("msgs");
+		CC.msgsType = MsgsType.SET;
+		
 	}
 	
 	private static void initBasicPaxosRound() {

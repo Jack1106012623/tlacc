@@ -201,6 +201,7 @@ public class TLC {
 	 */
 	private TraceExplorationSpec teSpec;
 
+	private String roundsFile;
 	/**
 	 * Initialization
 	 */
@@ -850,6 +851,18 @@ public class TLC {
 					printErrorMsg("Error: fpbits required.");
 					return false;
 				}
+			} else if (args[index].equals("-rounds")) {
+				index++;
+				if (index < args.length) {
+					roundsFile = args[index];
+					if (roundsFile.endsWith(TLAConstants.Files.ROUNDS_EXTENSION)) {
+						roundsFile = roundsFile.substring(0, (roundsFile.length() - TLAConstants.Files.ROUNDS_EXTENSION.length()));
+					}
+					index++;
+				} else {
+					printErrorMsg("Error: expect a file name for -rounds option.");
+					return false;
+				}
 			} else {
 				if (args[index].charAt(0) == '-') {
 					printErrorMsg("Error: unrecognized option: " + args[index]);
@@ -1081,7 +1094,7 @@ public class TLC {
 					}
 				} else {
 //					tool = new FastTool(mainFile, configFile, resolver, params);
-					tool = new CCTool(mainFile, configFile, resolver, params);
+					tool = new CCTool(mainFile, configFile, roundsFile ,resolver, params);
 
 				}
 				deadlock = deadlock && tool.getModelConfig().getCheckDeadlock();

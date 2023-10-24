@@ -6,8 +6,10 @@ import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import tla2sany.semantic.OpDefNode;
 import tlc2.tool.Action;
 import tlc2.tool.TLCState;
+import tlc2.util.Context;
 
 public class Rounds {
 	
@@ -39,28 +41,93 @@ public class Rounds {
 	public boolean isLastRound(int id) {
 		return id == rounds.size()-1;
 	}
+	//	args: null, (1,*)
+	private String[] parseActionArgs(String args){
+		String[] ret = null;
+		if(args != null) {
+			ret = args.substring(1, args.length()-1).split(",");
+		}
+		return ret;
+	}
+	
+	private List<Action> getValidAction(String actionName, String actionArgs){
+		// actionArgs: (1,*), null
+		String[] args = null;
+		if(actionArgs != null) {
+			args = actionArgs.substring(1, actionArgs.length()-1).split(",");
+		}
+		
+		if(actionName.equals("NULL")) {
+			return null;
+		}
+		
+		List<Action> actions = CC.actionMap.get(actionName);
+		if(actions==null) {
+			CC.printError("No such action: " + actionName);
+			System.exit(1);
+		}
+		
+		List<Action> ret=null;
+		for(Action action:actions) {
+			OpDefNode opDef = action.getOpDef();
+			if(opDef == null) {
+				CC.printError("CC currently do not support such action: " + actionName);
+				System.exit(1);
+			}
+			int arity = opDef.getArity();
+			if(arity == -1) {
+				CC.printError("CC currently do not support variable number of args: " + actionName);
+				System.exit(1);
+			}
+			if(arity == args.length) {
+				Context ctx = action.con;
+				boolean valid = true;
+				for(int i=args.length-1;i>=0;i--,ctx = ctx.next()) {
+					if(!args[i].equals("*") && !ctx.getValue().toString().equals(args[i])) {
+						valid = false;
+						break;
+					}
+				}
+				if(valid) {
+					if(ret == null) {
+						ret = new ArrayList<Action>();
+					}
+					ret.add(action);
+				}
+			}
+		}
+		if(ret==null) {
+			CC.printError("No action with args: " + actionArgs);
+			System.exit(1);
+		}
+		return ret;
+	}
 	public void addRound(String line) {
 		Pattern pattern = Pattern.compile(RE_Round);
-        Matcher matcher = pattern.matcher(line);
-        String SendName = null, SendArgs=null, RcvName=null, RcvArgs=null;
-        if (matcher.find()) {
-            int group = 1;
-            SendName = matcher.group(group++);
-            if(SendName!="NULL"){
-                SendArgs = matcher.group(group++);
-            }
-            RcvName = matcher.group(group++);
-            if(RcvName!="NULL"){
-                RcvArgs = matcher.group(group);
-            }
-        }
+    Matcher matcher = pattern.matcher(line);
+    String SendName = null, SendArgs=null, RcvName=null, RcvArgs=null;
+    boolean syntax_error = false;
+    if (matcher.find()) {
+      int group = 1;
+      SendName = matcher.group(group++);
+      SendArgs = matcher.group(group++);
+      RcvName = matcher.group(group++);
+      RcvArgs = matcher.group(group);
+      if(SendName==null || RcvName==null) {
+      	syntax_error = true;
+      }
+    } else {
+    	syntax_error = true;
+    }
+    
+    if(syntax_error) {
+    	CC.printError("Syntax Error: " + line);
+    	System.exit(1);
+    }
 		List<Action> sendActions=null, rcvActions=null;
-		if(SendName!="NULL") {
-			sendActions = CC.actionMap.get(SendName);
-		}
-		if(RcvName!="NULL") {
-			rcvActions = CC.actionMap.get(RcvName);
-		}
+		sendActions = getValidAction(SendName, SendArgs);
+		rcvActions = getValidAction(RcvName, RcvArgs);
+		
 		String RoundName = "";
 		addRound(RoundName, sendActions, rcvActions);
 		

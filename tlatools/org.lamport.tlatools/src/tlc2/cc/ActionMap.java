@@ -9,14 +9,14 @@ import tlc2.tool.Action;
 
 public class ActionMap {
 	// action name -> actions with different args
-	public HashMap<String, List<Action>> name2list;
+	public HashMap<String, List<Action>> name2list = new HashMap<>();
 	
     // fill name2list
 	public void fill() {
 		Action[] actions = CC.actions;
 		for (Action action : actions) {
 			String name = action.getNameOfDefault();
-			if(name2list.containsKey(name)) {
+			if(!name2list.containsKey(name)) {
 				name2list.put(name, new ArrayList<>());
 			}
 			name2list.get(name).add(action);

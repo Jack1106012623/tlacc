@@ -1,10 +1,16 @@
 package tlc2.cc;
 
 import java.io.BufferedReader;
+import java.io.File;
 import java.io.FileReader;
 import java.io.IOException;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.net.URL;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import tlc2.cc.CCAction.Type;
 import tlc2.tool.Action;
@@ -14,6 +20,9 @@ import tlc2.tool.impl.CCTool;
 import tlc2.value.IValue;
 import tlc2.value.impl.SetDiffValue;
 import tlc2.value.impl.Value;
+import util.DebugPrinter;
+import util.FilenameToStream;
+import util.ToolIO;
 import util.UniqueString;
 
 
@@ -30,7 +39,8 @@ public class CC  {
 	
 	public static Action[] actions;
 	public static HashMap<Integer, Action> id2Action = new HashMap<>();
-
+	public static String RE_Meta_Msg = "@Msg\\.(\\w+)=(\\w+)";
+	
 	public static void init(CCTool tool, String roundsFile) {
 		System.out.println("Initialize CC.");
 		
@@ -41,7 +51,9 @@ public class CC  {
 		printActions();
 		
 		System.out.println("construct Rounds");
-		constructRounds(roundsFile);
+		if(!constructRounds(roundsFile)) {
+			System.exit(1);
+		}
 		
 		System.out.println("set Empty's CCState");
 		setEmpty();
@@ -59,21 +71,67 @@ public class CC  {
 		}
 	}
 	
-	private static void constructRounds(String roundsFile) {
+	public static void printError(String msg) {
+		ToolIO.out.println(msg);
+	}
+	
+	
+	private static boolean constructRounds(String roundsFile) {
 //		initRaftRound();
 //		initBasicPaxosRound();
-		CC.msgs = UniqueString.uniqueStringOf("msgs");
-		CC.msgsType = MsgsType.SET;
 		CC.actionMap = new ActionMap();
 		CC.actionMap.fill();
+		
+		Pattern meta_pattern = Pattern.compile(RE_Meta_Msg);
+		
 		try (BufferedReader reader = new BufferedReader(new FileReader(roundsFile))) {
-            String line;
-            while ((line = reader.readLine()) != null) {
-                rounds.addRound(line);
-            }
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
+      String line;
+      while ((line = reader.readLine()) != null) {
+      	if(line.startsWith("@")) {
+
+      		Matcher matcher = meta_pattern.matcher(line);
+      		if(matcher.find()){
+      			int cnt = matcher.groupCount();
+      			if(cnt==2) {
+      				String k = matcher.group(1);
+      				String v = matcher.group(2);
+      				if(k.equals("Type")) {
+      					if(v.equals("Set")) {
+      						CC.msgsType = MsgsType.SET;
+      					} else if(v.equals("Fcn")) {
+      						CC.msgsType = MsgsType.FCN;
+      					} else {
+      						printError("Message type should be Set ot Fcn");
+      						return false;
+      					}
+      				} else if(k.equals("Var")) {
+      					CC.msgs = UniqueString.internTbl.find(v);
+      					if(CC.msgs == null) {
+      						printError("No such variable: " + v);
+      						return false;
+      					}
+      				} else {
+      					printError("Syntax error: " + line);
+          			return false;
+      				}
+      			}else {
+      				printError("Syntax error: " + line);
+        			return false;
+      			}
+      		} else {
+      			printError("Syntax error: " + line);
+      			return false;
+      		}
+      		
+      	} else {
+      		rounds.addRound(line);
+      	}
+        
+      }
+    } catch (IOException e) {
+      e.printStackTrace();
+    }
+		return true;
 	}
 	
 	private static void initBasicPaxosRound() {
@@ -128,7 +186,9 @@ public class CC  {
 		CCState ccstate = ((TLCStateMutCC)state).getCCState();
 		CCAction pre = ccstate.getPre();
 		ArrayList<CCAction> ret = new ArrayList<>();
-
+		if(pre.getRoundNumber()==5) {
+			System.out.println("HERE");
+		}
 		switch(pre.getType()) {
 		case Init:
 		case BeginGuard:

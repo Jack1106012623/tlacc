@@ -54,6 +54,7 @@ public final class CCTool extends Tool {
 	public boolean getNextStates(final INextStateFunctor functor, TLCState state, CCAction next) {
 		Action action = next.getAction();
 		
+		
 		switch(next.getType()) {
 		case Init:{
 			System.out.println("Should not get Init");

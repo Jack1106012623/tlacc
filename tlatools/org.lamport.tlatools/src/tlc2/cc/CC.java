@@ -1,5 +1,8 @@
 package tlc2.cc;
 
+import java.io.BufferedReader;
+import java.io.FileReader;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
 
@@ -21,6 +24,7 @@ import util.UniqueString;
 public class CC  {
 	private static Rounds rounds = new Rounds();
 	private static UniqueString msgs = null;
+	public static ActionMap actionMap = null;
 	enum MsgsType {SET, FCN};
 	private static MsgsType msgsType = MsgsType.SET;
 	
@@ -57,9 +61,19 @@ public class CC  {
 	
 	private static void constructRounds(String roundsFile) {
 //		initRaftRound();
+//		initBasicPaxosRound();
 		CC.msgs = UniqueString.uniqueStringOf("msgs");
 		CC.msgsType = MsgsType.SET;
-		
+		CC.actionMap = new ActionMap();
+		CC.actionMap.fill();
+		try (BufferedReader reader = new BufferedReader(new FileReader(roundsFile))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                rounds.addRound(line);
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
 	}
 	
 	private static void initBasicPaxosRound() {

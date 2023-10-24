@@ -1,0 +1,77 @@
+
+观察
+- 多维Ballot Number可以用for循环嵌套实现。
+- 暂且实现一个只支持for循环的解析器
+
+
+- Paxos
+Ballot = [0, 1]
+for b in Ballot:
+	SEND_RCV_SEND: [Phase1a(b) , Phase1b(*)]
+	SEND_RCV_SEND: [		   , Phase2a(b,*)]
+	SEND_RCV_SEND: [		   , Phase2b(*)]
+
+- Raft
+Server = [s1, s2, s3]
+Value = [v1, v2]
+
+for r in [1,10]:
+	for i in Server:
+		for v in Value:
+			[Timeout(i), 			NULL]
+			[RequestVote(i), 		CCHandleRequestVoteRequest(i,*)]
+			[NULL, 					CCHandleRequestVoteResponse(i,*)]
+			[BecomeLeader(i), 		NULL]
+			[ClientRequest(i), 		NULL]7803
+			[AppendEntries(i,*), 	CCHandleAppendEntriesRequest(i,*)]
+			[NULL, 					CCHandleAppendEntriesResponse(i, *)]
+			[AdvanceCommitIndex(i), NULL]
+
+msg miss如何模拟
+- 1. send和rcv之间执行一个msg miss的动作，消息丢失后部分接收动作不被使能。实现：遍历所有接收动作，不被使能的动作跳过执行。
+- 2. 不执行某些rcv动作模拟消息丢失。实现：通过跳过使能的接收动作，可能会出现CC允许执行接收动作但动作不被使能的情况，此时可以直接中断round执行
+- 相同点
+	- 两种方式都依赖于接收动作的使能条件：没有发送给节点i的消息时，节点i的接收动作不被使能。
+- 不同点
+	- 1在做msg miss需要清理信道一次，在round结束时需要清理一次。需要清理两次信道。而2只需要在轮结束时清理一次。
+	- 2
+	
+	 
+
+msg miss后所有被使能的接收动作都要执行，到下一轮时未丢弃的消息要全部丢掉。
+- 控制rcv动作是否执行。到下一轮时上一轮的消息要全部丢掉。
+
+- paxos特殊处理
+phase2a(b,v)是否能执行取决于phase1b的回复中是否带有v。
+因此无法预先定义好round中有哪些动作，需要根据实际运行情况才能构建出合适的round。
+观察到Phase2a(b,v1)与Phase2a(b,v2)是互斥的，可将这两个动作都预定义到一个round中，
+此时需要TLACC执行器在遇到需要执行但不能执行的动作时终止所有的round。
+
+- paxos错误定义，不能用for循环来枚举Value。
+
+
+
+Ballot = [0, 1]
+Value = [v1, v2]
+for b in Ballot:
+	for v in Value（v1, v2）:
+		[Phase1a(b), Phase1b(*)]
+		[		   , Phase2a(b,v)]
+		[		   , Phase2b(*)]
+
+
+[Phase1a(0), Phase1b(*)]
+[		   , Phase2a(0,v1)]
+[		   , Phase2b(*)]
+[Phase1a(0), Phase1b(*)]
+[		   , Phase2a(0,v2)]
+[		   , Phase2b(*)]
+[Phase1a(1), Phase1b(*)]
+[		   , Phase2a(1,v1)]
+[		   , Phase2b(*)]
+[Phase1a(1), Phase1b(*)]
+[		   , Phase2a(1,v2)]
+[		   , Phase2b(*)]
+
+
+		

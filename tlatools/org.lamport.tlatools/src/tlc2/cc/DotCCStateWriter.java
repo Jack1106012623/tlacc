@@ -326,6 +326,8 @@ public class DotCCStateWriter extends StateWriter {
 		case Send:
 		case Rcv: {
 			actionName = action.getName().toString();
+			String args = action.con.toString();
+			actionName += args;
 			break;
 		}
 		case MidGuard: {

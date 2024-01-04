@@ -1,21 +1,29 @@
 package tlc2.cc;
 
+import java.io.IOException;
+
 import tlc2.cc.CCAction.Type;
 import tlc2.tool.Action;
+import tlc2.tool.FingerprintException;
+import tlc2.util.FP64;
+import tlc2.value.IValueOutputStream;
+import tlc2.value.ValueInputStream;
 
 /**
- * CCIterator is used to go through CC rounds to determine the next permitted actions.
- * CCIterator lies between two actions.
+ * CCAction is a TLA action with round info(round number + round index).
+ * 
  */
 public class CCAction {
 	public enum Type{Send, Rcv, BeginGuard, MidGuard, EndGuard, Init}
-	
+	static public byte INTVALUE         =  1;
 	private int roundNumber;
 	private int index;
 	private Action action;
 	private Type type;
 	private int level;
 	
+	public static CCAction Empty = new CCAction(-1,-1,null,Type.Init,Rounds.INIT_LEVEL);
+
 	CCAction(int roundNumber, int index, Action action, Type type, int level) {
 		this.roundNumber = roundNumber;
 		this.index = index;
@@ -24,8 +32,11 @@ public class CCAction {
 		this.level = level;
 	}
 
-	public long fingerPrint() {
-		return roundNumber * 137 + index;
+	public long fingerPrint(long fp) {
+		fp = FP64.Extend(FP64.Extend(fp, INTVALUE), level);
+//		fp = FP64.Extend(FP64.Extend(fp, INTVALUE), roundNumber);
+//		fp = FP64.Extend(FP64.Extend(fp, INTVALUE), index);
+		return fp;
 	}
 
 	public Action getAction() {
@@ -38,7 +49,6 @@ public class CCAction {
 	public String toString() {
 
 		String str = "[round = " + roundNumber + ", level = " + level;
-		
 		switch(type) {
 		case Init: {
 			return "Initial Action";
@@ -87,4 +97,47 @@ public class CCAction {
 	public void setLevel(int level) {
 		this.level = level;
 	}
+
+	public String getLocation() {
+		switch(type) {
+		case Init:{
+			return "< null >";
+		}
+		case BeginGuard:{
+			return "< BeginGuard >";
+		}
+		case MidGuard:{
+			return "< MidGuard >";
+		}
+		case Send:
+		case Rcv:{
+			if(action.isNamed()) {
+				return "<" + action.getName().toString() + action.con.toString() + " " +  action.pred.getLocation() + ">";
+			}else {
+				return "< Action Unnamed >";
+			}
+		}
+		case EndGuard: {
+			return "< EndGuard >";
+		}
+		default:{ assert(false);}
+		}
+		return null;
+	}
+	
+	public void write(IValueOutputStream vos) throws IOException {
+		vos.writeInt(roundNumber);
+		vos.writeInt(index);
+	}
+	
+	public static CCAction createFrom(ValueInputStream vis) throws IOException {
+		int roundNumber = vis.readInt();
+		int index = vis.readInt();
+		if(roundNumber<0) {
+			return CCAction.Empty;
+		}
+		return CC.getRound(roundNumber).getCCAction(index);
+	}
+
+	
 }

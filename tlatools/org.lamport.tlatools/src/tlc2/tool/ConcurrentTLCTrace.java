@@ -134,7 +134,7 @@ public class ConcurrentTLCTrace extends TLCTrace {
 		}
 	}
 
-	protected final TLCStateInfo[] getTrace(TLCStateInfo sinfo, final List<Record> records) {
+	protected TLCStateInfo[] getTrace(TLCStateInfo sinfo, final List<Record> records) {
 		// Re-Initialize the rng with the seed value recorded and used during the model
 		// checking phase. Otherwise, we won't be able to reconstruct the error trace
 		// because the set of initial states is likely to be different.
@@ -171,6 +171,7 @@ public class ConcurrentTLCTrace extends TLCTrace {
 			for (int i = len-2; i >= 0; i--) {
 				Record record = records.get(i+1);
 				long fp = record.fp;
+				TLCStateInfo bak = sinfo;
 				sinfo = this.tool.getState(fp, sinfo.state);
 				if (sinfo == null) {
 					/*
@@ -178,6 +179,7 @@ public class ConcurrentTLCTrace extends TLCTrace {
 					 * can't find a non-initial state from its fingerprint when it's generating an
 					 * error trace. LL 7 Mar 2012
 					 */
+					sinfo = this.tool.getState(fp, bak.state);
 					MP.printError(EC.TLC_FAILED_TO_RECOVER_INIT);
 					MP.printError(EC.TLC_BUG, "2 " + Long.toString(fp));
 					System.exit(1);
@@ -312,9 +314,9 @@ public class ConcurrentTLCTrace extends TLCTrace {
 			return getRecord(state, workers).getPredecessor();
 		}
 
-		private final long ptr;
-		private final int worker;
-		private final long fp;
+		public final long ptr;
+		public final int worker;
+		public final long fp;
 		private Worker[] workers;
 
 		public Record(final long ptr, final int worker, final long fp) {

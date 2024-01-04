@@ -9,6 +9,7 @@ import java.io.InputStream;
 import java.util.Map;
 
 import tlc2.TLCGlobals;
+import tlc2.cc.CCState;
 import tlc2.value.impl.BoolValue;
 import tlc2.value.impl.FcnRcdValue;
 import tlc2.value.impl.IntValue;
@@ -84,6 +85,9 @@ public final class ValueInputStream implements ValueConstants, IValueInputStream
 		}
 		case DUMMYVALUE: {
 			return (IValue) this.handles.getValue(this.readNat());
+		}
+		case CCVALUE:{
+			return CCState.createFrom(this);
 		}
 		default: {
 			throw new WrongInvocationException("ValueInputStream: Can not unpickle a value of kind " + kind);

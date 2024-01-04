@@ -1,0 +1,8 @@
+@Msg.Type=Set
+@Msg.Var=msgs
+[Prepare(*,0),OnMessage(*)]
+[NULL,Accept(*,0,*)]
+[NULL,OnMessage(*)]
+[Prepare(*,1),OnMessage(*)]
+[NULL,Accept(*,1,*)]
+[NULL,OnMessage(*)]

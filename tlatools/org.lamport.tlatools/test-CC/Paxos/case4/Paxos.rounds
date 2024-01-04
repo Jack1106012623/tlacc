@@ -1,0 +1,8 @@
+@Msg.Type=Set
+@Msg.Var=msgs
+[Phase1a(0),Phase1b(*)]
+[NULL,Phase2a(0,*)]
+[NULL,Phase2b(*)]
+[Phase1a(1),Phase1b(*)]
+[NULL,Phase2a(1,*)]
+[NULL,Phase2b(*)]

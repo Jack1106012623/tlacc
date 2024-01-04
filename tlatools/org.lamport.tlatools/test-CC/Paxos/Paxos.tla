@@ -3,12 +3,21 @@
 (* This is a specification of the Paxos algorithm without explicit leaders *)
 (* or learners.  It refines the spec in Voting                             *)
 (***************************************************************************)
-EXTENDS Integers
+EXTENDS Integers, FiniteSets
 -----------------------------------------------------------------------------
 (***************************************************************************)
 (* The constant parameters and the set Ballots are the same as in Voting.  *)
 (***************************************************************************)
 CONSTANT Value, Acceptor, Quorum, Ballot, None
+
+NP == Cardinality(Acceptor) \* number of a \in Acceptor
+
+MCMaxBallot == 1
+MCBallot == 0..MCMaxBallot 
+
+\* We generate the quorum system instead of input manually
+MCQuorum == {Q \in SUBSET Acceptor : Cardinality(Q) * 2 >= NP + 1} 
+
 
 ASSUME QuorumAssumption == /\ \A Q \in Quorum : Q \subseteq Acceptor
                            /\ \A Q1, Q2 \in Quorum : Q1 \cap Q2 # {} 
@@ -35,7 +44,8 @@ VARIABLE maxBal,
          maxVBal, \* <<maxVBal[a], maxVal[a]>> is the vote with the largest
          maxVal,    \* ballot number cast by a; it equals <<-1, None>> if
                     \* a has not cast any vote.
-         msgs     \* The set of all messages that have been sent.
+         msgs,     \* Message channel.
+         msgsBak    \* The set of all messages that have been sent.
 
 (***************************************************************************)
 (* NOTE:                                                                   *)
@@ -55,7 +65,7 @@ VARIABLE maxBal,
 (* retransmitted if lost) to guarantee progress.                           *)
 (***************************************************************************)
 
-vars == <<maxBal, maxVBal, maxVal, msgs>>
+vars == <<maxBal, maxVBal, maxVal, msgs, msgsBak>>
   (*************************************************************************)
   (* It is convenient to define some identifier to be the tuple of all     *)
   (* variables.  I like to use the identifier `vars'.                      *)
@@ -68,18 +78,21 @@ TypeOK == /\ maxBal \in [Acceptor -> Ballot \cup {-1}]
           /\ maxVBal \in [Acceptor -> Ballot \cup {-1}]
           /\ maxVal \in [Acceptor -> Value \cup {None}]
           /\ msgs \subseteq Message
+          /\ msgsBak \subseteq Message
           
 
 Init == /\ maxBal = [a \in Acceptor |-> -1]
         /\ maxVBal = [a \in Acceptor |-> -1]
         /\ maxVal = [a \in Acceptor |-> None]
         /\ msgs = {}
+        /\ msgsBak = {}
 
 (***************************************************************************)
 (* The actions.  We begin with the subaction (an action that will be used  *)
 (* to define the actions that make up the next-state action.               *)
 (***************************************************************************)
-Send(m) == msgs' = msgs \cup {m}
+Send(m) == /\ msgs' = msgs \cup {m}
+           /\ msgsBak' = msgsBak \cup {m}
 
 
 (***************************************************************************)
@@ -126,14 +139,13 @@ Phase1b(a) == /\ \E m \in msgs :
 (* greater than b (thereby promising not to vote in ballot b).             *)
 (***************************************************************************)
 Phase2a(b, v) ==
-    \* 防止一个proposer对一个ballot发出两个value
   /\ ~ \E m \in msgs : m.type = "2a" /\ m.bal = b
   /\ \E Q \in Quorum :
         LET Q1b == {m \in msgs : /\ m.type = "1b"
                                  /\ m.acc \in Q
                                  /\ m.bal = b}
             Q1bv == {m \in Q1b : m.mbal \geq 0}
-        IN  /\ \A a \in Q : \E m \in Q1b : m.acc = a \* 收到多数派1b回复
+        IN  /\ \A a \in Q : \E m \in Q1b : m.acc = a 
             /\ \/ Q1bv = {}
                \/ \E m \in Q1bv : 
                     /\ m.mval = v
@@ -151,7 +163,7 @@ Phase2a(b, v) ==
 (* message's.  ballot number                                               *)
 (***************************************************************************)
 Phase2b(a) == \E m \in msgs : /\ m.type = "2a"
-                              /\ m.bal \geq maxBal[a]
+                            \*   /\ m.bal \geq maxBal[a]
                               /\ maxBal' = [maxBal EXCEPT ![a] = m.bal] 
                               /\ maxVBal' = [maxVBal EXCEPT ![a] = m.bal] 
                               /\ maxVal' = [maxVal EXCEPT ![a] = m.val]
@@ -163,7 +175,6 @@ Phase2b(a) == \E m \in msgs : /\ m.type = "2a"
 (* the phase 2b messages if a value has been chosen.  The learners are     *)
 (* omitted from this abstract specification of the algorithm.              *)
 (***************************************************************************)
-
 
 (***************************************************************************)
 (* Below are defined the next-state action and the complete spec.          *)
@@ -185,7 +196,7 @@ Spec == Init /\ [][Next]_vars
 (* as follows.                                                             *)
 (***************************************************************************)
 votes == [a \in Acceptor |->  
-           {<<m.bal, m.val>> : m \in {mm \in msgs: /\ mm.type = "2b"
+           {<<m.bal, m.val>> : m \in {mm \in msgsBak: /\ mm.type = "2b"
                                                    /\ mm.acc = a }}]
 (***************************************************************************)
 (* We now instantiate module Voting, substituting the constants Value,     *)
@@ -194,7 +205,12 @@ votes == [a \in Acceptor |->
 (* and the defined state function `votes' for the correspondingly-named    *)
 (* variables of module Voting.                                             *)
 (***************************************************************************)
-\* V == INSTANCE Voting 
+V == INSTANCE Voting 
+Inv1 == V!TypeOK
+Inv2 == V!VotesSafe
+Inv3 == V!OneValuePerBallot
+
+
 
 \* THEOREM Spec => V!Spec
 -----------------------------------------------------------------------------

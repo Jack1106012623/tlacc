@@ -13,6 +13,7 @@ import java.util.Arrays;
 import java.util.LinkedList;
 
 import tlc2.TLCGlobals;
+import tlc2.cc.TLCStateMutCC;
 import tlc2.output.EC;
 import tlc2.output.MP;
 import tlc2.tool.fp.FPSet;
@@ -444,7 +445,7 @@ public final class Worker extends IdThread implements IWorker, INextStateFunctor
 					throw new InvariantViolatedException();
 				}
 			}
-			
+			 
 			// Check if the state violates any implied action. We need to do it
 			// even if succState is not new.
 			if (this.doNextCheckImplied(curState, succState)) {
@@ -455,6 +456,18 @@ public final class Worker extends IdThread implements IWorker, INextStateFunctor
 				// The state is inModel, unseen and neither invariants
 				// nor implied actions are violated. It is thus eligible
 				// for further processing by other workers.
+				((TLCStateMutCC)curState).getCCState().setActionExecuted(true);
+				// test - begin
+				int cur_cc_level = ((TLCStateMutCC)curState).getCCState().getLevel();
+				int succ_cc_level = ((TLCStateMutCC)succState).getCCState().getLevel();
+				if(succ_cc_level<=cur_cc_level) {
+//					System.out.println("Error");
+				}
+				if(succ_cc_level<=1 || cur_cc_level<=1) {
+//					System.out.println("Error");
+				}
+				// test - end
+				
 				this.squeue.sEnqueue(succState);
 			}
 			return this;

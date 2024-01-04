@@ -57,6 +57,7 @@ public abstract class Value implements ValueConstants, Serializable, IValue {
 	    "an undefined value",                         // "UndefValue",
 	    "a value represented in lazy form",           // "LazyValue",
 	    "a dummy for not-a-value",                    // "DummyValue",    
+	    "a special value representing ccstate",       // "CCValue",    
 	  };
 	  
 	/**
@@ -91,7 +92,7 @@ public abstract class Value implements ValueConstants, Serializable, IValue {
   public abstract Value takeExcept(ValueExcept[] exs);
 
   /* This method returns true iff val can be assigned to this. */
-  abstract boolean assignable(Value val);
+  public abstract boolean assignable(Value val);
   
   public abstract Value normalize();
 

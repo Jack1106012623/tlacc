@@ -26,6 +26,7 @@ import java.util.regex.Pattern;
 
 import model.InJarFilenameToStream;
 import model.ModelInJar;
+import tlc2.cc.CC;
 import tlc2.cc.DotCCStateWriter;
 import tlc2.debug.TLCDebugger;
 import tlc2.output.EC;

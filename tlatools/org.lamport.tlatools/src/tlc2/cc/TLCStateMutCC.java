@@ -55,7 +55,10 @@ public class TLCStateMutCC extends TLCState implements Cloneable, Serializable {
 		vars = variables;
 		IValue[] vals = new IValue[vars.length];
 		Empty = new TLCStateMutCC(vals);
-
+		
+		System.out.println("set Empty's CCState");
+		CC.setEmpty();
+		
 		// SZ 10.04.2009: since this method is called exactly one from Spec#processSpec
 		// moved the call of UniqueString#setVariables to that place
 
@@ -270,7 +273,7 @@ public class TLCStateMutCC extends TLCState implements Cloneable, Serializable {
 			fp = val.fingerPrint(fp);
 		}
 //		fp += this.cc.hashcode();
-		fp = FP64.Extend(FP64.Extend(fp, IntValue.INTVALUE ), (int)this.cc.fingerPrint());
+		fp = this.cc.fingerPrint(fp);
 		return fp;
 	}
 
@@ -318,6 +321,7 @@ public class TLCStateMutCC extends TLCState implements Cloneable, Serializable {
 		for (int i = 0; i < len; i++) {
 			this.values[i] = vis.read();
 		}
+		this.cc = (CCState) vis.read();
 	}
 
 	public final void write(IValueOutputStream vos) throws IOException {
@@ -326,6 +330,7 @@ public class TLCStateMutCC extends TLCState implements Cloneable, Serializable {
 		for (int i = 0; i < len; i++) {
 			this.values[i].write(vos);
 		}
+		this.cc.write(vos);
 	}
 
 	/* Returns a string representation of this state. */
@@ -355,6 +360,7 @@ public class TLCStateMutCC extends TLCState implements Cloneable, Serializable {
 			}
 		}
 		if(this.cc != null) {
+			result.append("/\\ ");
 			result.append(this.cc.toString());
 		}else {
 			result.append("ccstate is null\n");

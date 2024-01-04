@@ -61,7 +61,7 @@ public class Round {
 	}
 	
 	public void print() {
-		String str = "round : " + id + ": [";
+		String str = "round " + id + ": [";
 		for(int i=0;i<iters.size();i++) {
 			str += iters.get(i).toString() + ", ";
 		}

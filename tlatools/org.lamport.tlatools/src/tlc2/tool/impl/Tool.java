@@ -3583,7 +3583,7 @@ public abstract class Tool
 	 *         the predecessor.
 	 */
   @Override
-  public final TLCStateInfo getState(long fp, TLCStateInfo sinfo) {
+  public TLCStateInfo getState(long fp, TLCStateInfo sinfo) {
     final TLCStateInfo tlcStateInfo = getState(fp, sinfo.state);
     if (tlcStateInfo == null) {
       throw new EvalException(EC.TLC_FAILED_TO_RECOVER_NEXT);
@@ -3596,7 +3596,7 @@ public abstract class Tool
 
   /* Reconstruct the next state of state s whose fingerprint is fp. */
   @Override
-  public final TLCStateInfo getState(long fp, TLCState s) {
+  public TLCStateInfo getState(long fp, TLCState s) {
 	  IdThread.setCurrentState(s);
     for (int i = 0; i < this.actions.length; i++) {
       Action curAction = this.actions[i];
@@ -3616,7 +3616,7 @@ public abstract class Tool
 
   /* Reconstruct the info for s1.   */
   @Override
-  public final TLCStateInfo getState(TLCState s1, TLCState s) {
+  public TLCStateInfo getState(TLCState s1, TLCState s) {
 	  IdThread.setCurrentState(s);
     for (int i = 0; i < this.actions.length; i++) {
       Action curAction = this.actions[i];

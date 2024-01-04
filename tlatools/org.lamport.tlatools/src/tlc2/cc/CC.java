@@ -36,6 +36,7 @@ public class CC  {
 	public static ActionMap actionMap = null;
 	enum MsgsType {SET, FCN};
 	private static MsgsType msgsType = MsgsType.SET;
+	public static boolean cleanChannel = false;
 	
 	public static Action[] actions;
 	public static HashMap<Integer, Action> id2Action = new HashMap<>();
@@ -55,14 +56,12 @@ public class CC  {
 			System.exit(1);
 		}
 		
-		System.out.println("set Empty's CCState");
-		setEmpty();
+//		System.out.println("set Empty's CCState");
+//		setEmpty();
 		
 		print();
 	}
-	private static void setEmpty() {
-		CCState ccstate = new CCState(new CCAction(-1,-1,null,Type.Init,Rounds.INIT_LEVEL));
-		CCState.setEmpty(ccstate);
+	public static void setEmpty() {
 		TLCStateMutCC.setCCEmpty();
 	}
 	public static void printActions() {
@@ -101,7 +100,7 @@ public class CC  {
       					} else if(v.equals("Fcn")) {
       						CC.msgsType = MsgsType.FCN;
       					} else {
-      						printError("Message type should be Set ot Fcn");
+      						printError("Message type should be Set or Fcn");
       						return false;
       					}
       				} else if(k.equals("Var")) {
@@ -110,6 +109,16 @@ public class CC  {
       						printError("No such variable: " + v);
       						return false;
       					}
+      				} else if(k.equals("CleanChannel")){
+      					if(v.equals("FALSE")) {
+      						CC.cleanChannel = false;
+      					} else if(v.equals("TRUE")) {
+      						CC.cleanChannel = true;
+      					} else {
+      						printError("CleanChannel should be FALSE or TRUE");
+      						return false;
+      					}
+      					
       				} else {
       					printError("Syntax error: " + line);
           			return false;
@@ -182,13 +191,12 @@ public class CC  {
 	/**
 	 * This method return a next CCIterator list according to the current TLCState's CCState.
 	 */
-	public static ArrayList<CCAction> getNextActions(TLCState state) {
-		CCState ccstate = ((TLCStateMutCC)state).getCCState();
+	public static ArrayList<CCAction> getNextActions(CCState ccstate) {
 		CCAction pre = ccstate.getPre();
 		ArrayList<CCAction> ret = new ArrayList<>();
-		if(pre.getRoundNumber()==5) {
-			System.out.println("HERE");
-		}
+//		if(pre.getRoundNumber()==5) {
+//			System.out.println("HERE");
+//		}
 		switch(pre.getType()) {
 		case Init:
 		case BeginGuard:
@@ -210,6 +218,17 @@ public class CC  {
 			break;
 		}
 		default:{ assert(false);}
+		}
+		return ret;
+	}
+	public static ArrayList<CCAction> getNextSendsAndMid(CCState ccstate) {
+		CCAction pre = ccstate.getPre();
+		
+		ArrayList<CCAction> ret = new ArrayList<>();
+		CCAction next = rounds.getNext(pre);
+		while(next.getType() == Type.Send || next.getType() == Type.MidGuard) {
+			ret.add(next);
+			next = rounds.getNext(next);
 		}
 		return ret;
 	}

@@ -5,6 +5,12 @@
 
 package tlc2.tool;
 
+import tlc2.cc.CC;
+import tlc2.cc.CCAction;
+import tlc2.cc.CCState;
+import tlc2.cc.TLCStateMutCC;
+import tlc2.value.IValue;
+
 // TLCStateInfo is largely obsolete and should be replaced in favor of
 // TLCStateMutExt, which has support for storing the predecessor, action,
 // and level (stateNum), but doesn't have to be created after the fact,
@@ -46,6 +52,12 @@ public class TLCStateInfo {
 	this.info = toInfo(state.isInitial(), action);
   }
   
+  public TLCStateInfo(final TLCState state, final CCAction ccaction) {
+  	this.state = state;
+  	this.stateNumber = state.getLevel();
+  	this.info = toInfo(state.isInitial(), ccaction);
+  }
+  
   private static String toInfo(final boolean isInitial, final Action a) {
 	  if (isInitial && !a.isNamed()) {
 		  // It is possible for an action to have no name, yet to have a location. Instead
@@ -54,6 +66,10 @@ public class TLCStateInfo {
 		  return a.getLocation(INITIAL_PREDICATE_NO_ANGLE_BRACKET);
 	  }
 	  return a.getLocation();
+  }
+  
+  private static String toInfo(final boolean isInitial, final CCAction ccaction) {
+	  return ccaction.getLocation();
   }
   
   // Legacy (DFID & MP)

@@ -1,13 +1,17 @@
 package tlc2.cc;
 
+import static org.junit.Assert.assertArrayEquals;
+
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileReader;
 import java.io.IOException;
+import java.lang.reflect.Array;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -19,6 +23,7 @@ import tlc2.tool.TLCState;
 import tlc2.tool.impl.CCTool;
 import tlc2.value.IValue;
 import tlc2.value.impl.SetDiffValue;
+import tlc2.value.impl.SetEnumValue;
 import tlc2.value.impl.Value;
 import util.DebugPrinter;
 import util.FilenameToStream;
@@ -42,6 +47,8 @@ public class CC  {
 	public static HashMap<Integer, Action> id2Action = new HashMap<>();
 	public static String RE_Meta_Msg = "@Msg\\.(\\w+)=(\\w+)";
 	
+	public static long cnt = 0;
+	
 	public static void init(CCTool tool, String roundsFile) {
 		System.out.println("Initialize CC.");
 		
@@ -55,15 +62,16 @@ public class CC  {
 		if(!constructRounds(roundsFile)) {
 			System.exit(1);
 		}
-		
-//		System.out.println("set Empty's CCState");
-//		setEmpty();
-		
 		print();
+		initializeNextActions();
+		
+//		print();
+		printNexts();
 	}
 	public static void setEmpty() {
 		TLCStateMutCC.setCCEmpty();
 	}
+	
 	public static void printActions() {
 		for(int i=0;i<actions.length;i++) {
 			System.out.println("action " + actions[i].getId() + " : " + actions[i].getName() + " " + actions[i].con);
@@ -180,6 +188,7 @@ public class CC  {
 		rounds.addRound("round3", null, new int[] { 1 });
 		rounds.addRound("round4", null, new int[] { 1 });
 	}
+	
 	public static Round getRound(int id) {
 		return rounds.getRound(id);
 	}
@@ -187,50 +196,66 @@ public class CC  {
 		return rounds.firstRoundId();
 	}
 	
+	public static CCAction[] getNextActions(CCState ccstate) {
+		return ccstate.getPre().getNexts();
+	}
 	
-	/**
-	 * This method return a next CCIterator list according to the current TLCState's CCState.
-	 */
-	public static ArrayList<CCAction> getNextActions(CCState ccstate) {
-		CCAction pre = ccstate.getPre();
+	
+	public static CCAction[] getNextActions(CCAction pre){
 		ArrayList<CCAction> ret = new ArrayList<>();
-//		if(pre.getRoundNumber()==5) {
-//			System.out.println("HERE");
-//		}
+		
 		switch(pre.getType()) {
-		case Init:
-		case BeginGuard:
-		case Send:
-		case EndGuard: {
-			CCAction next = rounds.getNext(pre);
-			if(next != null) {
-				ret.add(next);
+		case Init:{
+			// add first send
+			ret.add(rounds.getNext(pre));
+			break;
+		}
+		case Send:{
+			Round cur = rounds.getRound(pre.getRoundNumber());
+			if(!cur.isLastSend(pre)) {
+				ret.add(cur.getNext(pre));
+				break;
+			}
+			// last send, add all rcvs
+			if(cur.hasRcv()) {
+				ret.addAll(cur.getNexts(pre));
+			}
+			// all msgs lost, add next send
+			CCAction nextSend = rounds.getNextSend(pre.getRoundNumber());
+			if(nextSend != null) {
+				ret.add(nextSend);
 			}
 			break;
 		}
-		case MidGuard:
 		case Rcv: {
-			CCAction cur = pre;
-			do {
-				cur = rounds.getNext(cur);
-				ret.add(cur);
-			}while(cur.getType() != Type.EndGuard);
+			Round cur = rounds.getRound(pre.getRoundNumber());
+			ret.addAll(cur.getNexts(pre));
+			Round next = rounds.getRound(pre.getRoundNumber()+1);
+			if(next == null) {
+				break;
+			}
+			if(next.hasSend()) {
+				ret.add(next.getFirstAction());
+			}else {
+				ret.addAll(next.getAllRcvs());
+				CCAction nextSend = rounds.getNextSend(pre.getRoundNumber()+1);
+				if(nextSend != null) {
+					ret.add(nextSend);
+				}
+			}
 			break;
 		}
-		default:{ assert(false);}
+		default:{ break;}
 		}
-		return ret;
+		return ret.toArray(new CCAction[0]);
 	}
-	public static ArrayList<CCAction> getNextSendsAndMid(CCState ccstate) {
-		CCAction pre = ccstate.getPre();
-		
-		ArrayList<CCAction> ret = new ArrayList<>();
-		CCAction next = rounds.getNext(pre);
-		while(next.getType() == Type.Send || next.getType() == Type.MidGuard) {
-			ret.add(next);
-			next = rounds.getNext(next);
+	
+	private static void initializeNextActions() {
+		CCAction cur = CCAction.Empty;
+		while(cur != null) {
+			cur.setNexts(CC.getNextActions(cur));
+			cur = rounds.getNext(cur);
 		}
-		return ret;
 	}
 	
 	public static UniqueString getMsgs() {
@@ -238,19 +263,39 @@ public class CC  {
 	}
 	public static void print() {
 		rounds.print();
+		
+	}
+	public static void printNexts() {
+		rounds.printNexts();
 	}
 	public static IValue getBeginRoundMsgs(TLCState state) {
 		CCState ccstate = ((TLCStateMutCC)state).getCCState();
 		if(ccstate.getPre().getType() == Type.Init) {
 			return state.lookup(CC.getMsgs());
 		}
-		
+		if(ccstate.getMsgs2() == null || state.lookup(CC.getMsgs())==null ) {
+			System.out.println("msgs2 is null");
+			System.exit(-1);
+		}
 		switch(msgsType) {
 		case SET:{
-			return new SetDiffValue((Value)ccstate.getMsgs2(), (Value)ccstate.getMsgs1());
+			return new SetDiffValue((Value)state.lookup(CC.getMsgs()), (Value)ccstate.getMsgs2());
 		}
 		case FCN:{
 			return FcnUtil.diff((Value)ccstate.getMsgs2(), (Value)ccstate.getMsgs1());
+		}
+		default:{
+			return null;
+		}
+		}
+	}
+	public static IValue getEmptyMsgs(TLCState state) {
+		switch(msgsType) {
+		case SET:{
+			return new SetEnumValue();
+		}
+		case FCN:{
+			return null;
 		}
 		default:{
 			return null;

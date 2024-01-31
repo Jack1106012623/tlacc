@@ -853,6 +853,7 @@ public class TLC {
 					return false;
 				}
 			} else if (args[index].equals("-rounds")) {
+				TLCGlobals.cc = true;
 				index++;
 				if (index < args.length) {
 					roundsFile = args[index];
@@ -981,9 +982,12 @@ public class TLC {
 			}
 			try {
 				if (asDot) {
+					if(TLCGlobals.cc) {
+						this.stateWriter = new DotCCStateWriter(dumpFile, colorize, actionLabels, snapshot, stuttering);
+					} else {
+						this.stateWriter = new DotStateWriter(dumpFile, colorize, actionLabels, snapshot, stuttering);
+					}
 					
-//					this.stateWriter = new DotStateWriter(dumpFile, colorize, actionLabels, snapshot, stuttering);
-					this.stateWriter = new DotCCStateWriter(dumpFile, colorize, actionLabels, snapshot, stuttering);
 				} else {
 					this.stateWriter = new StateWriter(dumpFile);
 				}
@@ -1094,9 +1098,12 @@ public class TLC {
 						tool = new DebugTool(mainFile, configFile, resolver, params, instance);
 					}
 				} else {
-//					tool = new FastTool(mainFile, configFile, resolver, params);
-					tool = new CCTool(mainFile, configFile, roundsFile ,resolver, params);
-
+					// use communication closure
+					if(TLCGlobals.cc) {
+						tool = new CCTool(mainFile, configFile, roundsFile ,resolver, params);
+					}else {
+						tool = new FastTool(mainFile, configFile, resolver, params);
+					}
 				}
 				deadlock = deadlock && tool.getModelConfig().getCheckDeadlock();
 				if (isBFS()) {
@@ -1151,7 +1158,8 @@ public class TLC {
 			if (teSpec != null) {
 				teSpec.generate(this.tool);
 			}
-
+			final long fpSetSize = TLCGlobals.mainChecker.getDistinctStatesGenerated();
+			System.out.println("Mid state:: " + CC.cnt + ", real disdinct states: " + (fpSetSize-CC.cnt));
 			MP.unsubscribeRecorder(this.recorder);
 			MP.flush();
 		}

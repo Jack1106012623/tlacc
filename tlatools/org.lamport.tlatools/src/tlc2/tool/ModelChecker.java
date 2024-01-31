@@ -16,6 +16,7 @@ import java.util.stream.Collectors;
 
 import tla2sany.semantic.OpDeclNode;
 import tlc2.TLCGlobals;
+import tlc2.cc.CC;
 import tlc2.output.EC;
 import tlc2.output.MP;
 import tlc2.tool.fp.FPSet;
@@ -884,6 +885,7 @@ public class ModelChecker extends AbstractChecker
 								Integer.toString(aggOutDegree.getMax()) });
         	}
         }
+        
     }
     
     private final void printProgresStats(final long startTime, final boolean isFinal) throws IOException {
@@ -912,7 +914,6 @@ public class ModelChecker extends AbstractChecker
                 MP.format(this.theStateQueue.size()),
                 MP.format(statesPerMinute),
                 MP.format(distinctStatesPerMinute) });
-		
 		TLAFlightRecorder.progress(isFinal, this.trace.getLevelForReporting(), l, fpSetSize, this.theStateQueue.size(),
 				statesPerMinute, distinctStatesPerMinute);
     }

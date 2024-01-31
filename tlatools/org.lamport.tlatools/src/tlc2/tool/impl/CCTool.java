@@ -43,23 +43,21 @@ public final class CCTool extends Tool {
 
 	@Override
   public boolean getNextStates(final INextStateFunctor functor, final TLCState state) {
-//		System.out.println("XXX get Next states, cur state = " + state);
-//		System.out.println("XXX get Next states");
 		CCState ccstate = ((TLCStateMutCC)state).getCCState();
-	  ArrayList<CCAction> list = CC.getNextActions(ccstate);
+		CCAction[] list = CC.getNextActions(ccstate);
 	  
-	  if(list.size()==1 && list.get(0).getType() == Type.Send) {
-	  	list = CC.getNextSendsAndMid(ccstate);
-	  	for (int i = 0; i < list.size(); i++) {
-  			this.getNextStates(functor, state, list.get(i));
-  			if(ccstate.isActionExecuted()) {
-	  			break;
-	  		}
+	  if(list.length == 1 && list[0].getType() == Type.Send) {
+	  	// if send cannot execute, do next send
+	  	while(!ccstate.isActionExecuted() && list.length>0 && list[0].getType() == Type.Send) {
+	  		this.getNextStates(functor, state, list[0]);
+	  		list = CC.getNextActions(list[0]);
 	  	}
-	  	return false;
+	  	if(ccstate.isActionExecuted()) {
+	  		return false;
+	  	}
 	  }
-	  for (int i = 0; i < list.size(); i++) {
-	  	this.getNextStates(functor, state, list.get(i));
+	  for (int i = 0; i < list.length; i++) {
+	  	this.getNextStates(functor, state, list[i]);
 		}
 		return false;
 		
@@ -67,60 +65,49 @@ public final class CCTool extends Tool {
 	// if send cannot execute, return true
 	public boolean getNextStates(final INextStateFunctor functor, TLCState state, CCAction next) {
 		Action action = next.getAction();
-	
-		
-		switch(next.getType()) {
-		case Init:{
-			System.out.println("Should not get Init");
-			assert(false);
-			break;
-		}
-		case BeginGuard:{
-			if(next.getLevel()<=2) {
-//				System.out.println("???");
+		CCAction pre = ((TLCStateMutCC)state).getCCState().getPre();
+		StateVec nss = new StateVec(1);
+		CCState succ_cc = new CCState(next);
+		TLCState s0 = null;
+
+		if(pre.getRoundNumber() != next.getRoundNumber()) {
+			IValue msgs2 = null;
+			// if gap multiple rounds, clear msgs
+			if(next.getRoundNumber() > pre.getRoundNumber()+1) {
+				s0 = state.copy();
+				msgs2 = CC.getEmptyMsgs(state);
+				s0.bind(CC.getMsgs(), msgs2);
+			}else if(pre.getType() == Type.Init) {
+				s0 = state;
+			} else if(pre.getType() == Type.Send) {
+				s0 = state.copy();
+				msgs2 = CC.getEmptyMsgs(state);
+				s0.bind(CC.getMsgs(), msgs2);
+			} else {
+				s0 = state.copy();
+				msgs2 = CC.getBeginRoundMsgs(state);
+				s0.bind(CC.getMsgs(), msgs2);
 			}
-			IValue newMsgs = CC.getBeginRoundMsgs(state);
-			TLCState s1 = state.copy();
-			((TLCStateMutCC)s1).setCCState(new CCState(next));
-			s1.bind(CC.getMsgs(), newMsgs);
-			functor.addElement(state,action,s1);
-			break;
+			succ_cc.setMsgs2(msgs2);
+			
+		} else {
+			s0 = state;
+			if(pre.getType() == Type.Send) {
+				succ_cc.setMsgs2(state.lookup(CC.getMsgs()));
+			} else {
+				succ_cc.setMsgs2(((TLCStateMutCC)state).getCCState().getMsgs2());
+			}
 		}
-		case MidGuard:{
-			TLCState s1 = state.copy();
-			CCState ccs1 = ((TLCStateMutCC)s1).getCCState();
-			IValue msgs = state.lookup(CC.getMsgs());
-			ccs1.setMsgs1(msgs);
-			ccs1.setPre(next);
-			ccs1.setActionExecuted(false);
-			functor.addElement(state,action,s1);
-			break;
-		}
-		case Send:
-		case Rcv:{
-			TLCState s1 = TLCState.Empty.createEmpty().setPredecessor(state).setAction(action);
-			CCState ccs1 = ((TLCStateMutCC)state).getCCState().copy();
-			ccs1.setPre(next);
-			ccs1.setActionExecuted(false);
-			((TLCStateMutCC)s1).setCCState(ccs1);
-			this.getNextStates(action, action.pred, ActionItemList.Empty, action.con, state,
-					s1, functor, action.cm);
-			break;
-		}
-		case EndGuard: {
-			TLCState s1 = state.copy();
-			CCState ccs1 = ((TLCStateMutCC)s1).getCCState();
-			IValue msgs = state.lookup(CC.getMsgs());
-			ccs1.setMsgs2(msgs);
-			ccs1.setPre(next);
-			ccs1.setActionExecuted(false);
-			functor.addElement(state,action,s1);
-			break;
-		}
-		default:{ assert(false);}
-		}
-		return false;
+		TLCState s1 = TLCState.Empty.createEmpty().setPredecessor(state).setAction(action);
+		this.getNextStates(action, action.pred, ActionItemList.Empty, action.con, s0,
+				s1, nss, action.cm);
 		
+		for (int i = 0; i < nss.size(); i++) {
+      TLCState succ = nss.elementAt(i);
+      ((TLCStateMutCC)succ).setCCState(succ_cc);
+      functor.addElement(state,action,succ);
+    }	
+		return false;
 	}
 	
 	
@@ -204,13 +191,28 @@ public final class CCTool extends Tool {
 	  
 	  StateVec nextStates = new StateVec(0);
 	  CCState ccstate = ((TLCStateMutCC)s).getCCState();
-	  ArrayList<CCAction> list = CC.getNextActions(ccstate);
-	  if(list.size()==1 && list.get(0).getType() == Type.Send) {
-	  	list = CC.getNextSendsAndMid(ccstate);
+	  CCAction[] list = CC.getNextActions(ccstate);
+	  if(list.length == 1 && list[0].getType() == Type.Send) {
+	  	CCAction pre = ccstate.getPre();
+	  	while(nextStates.size()==0 && list.length>0 && list[0].getType() == Type.Send) {
+	  		this.getNextStates(nextStates, s, list[0]);
+	  		if(nextStates.size() > 0) {
+		  		for (int j = 0; j < nextStates.size(); j++) {
+		        TLCState state = nextStates.elementAt(j);
+		        long nfp = state.fingerPrint();
+		        if (fp == nfp) {
+		        	state.setPredecessor(s);
+		        	assert !state.isInitial();
+		        	return new TLCStateInfo(state, list[0]);
+		        }
+		      }
+		  		return null;
+		  	}
+	  		list = CC.getNextActions(list[0]);
+	  	}
 	  }
-	  
-  	for (int i = 0; i < list.size(); i++) {
-  		CCAction ccaction = list.get(i);
+  	for (int i = 0; i < list.length; i++) {
+  		CCAction ccaction = list[i];
   		nextStates = this.getNextStates(ccaction, s);
 			for (int j = 0; j < nextStates.size(); j++) {
         TLCState state = nextStates.elementAt(j);
@@ -230,12 +232,31 @@ public final class CCTool extends Tool {
 	  IdThread.setCurrentState(s);
 	  StateVec nextStates = new StateVec(0);
 	  CCState ccstate = ((TLCStateMutCC)s).getCCState();
-	  ArrayList<CCAction> list = CC.getNextActions(ccstate);
-	  if(list.size()==1 && list.get(0).getType() == Type.Send) {
-	  	list = CC.getNextSendsAndMid(ccstate);
+	  CCAction[] list = CC.getNextActions(ccstate);
+	  if(list.length == 1 && list[0].getType() == Type.Send) {
+	  	CCAction pre = ccstate.getPre();
+	  	while(nextStates.size()==0 && list.length>0 && list[0].getType() == Type.Send) {
+	  		nextStates = this.getNextStates(list[0], s);
+	  		if(nextStates.size() > 0) {
+		  		for (int j = 0; j < nextStates.size(); j++) {
+		  			TLCState state = nextStates.elementAt(j);
+		        try {
+		        	if (s1.equals(state)) {
+		        		state.setPredecessor(s);
+		        		assert !state.isInitial();
+		        		return new TLCStateInfo(state, list[0]);
+		        	}
+		        } catch (TLCRuntimeException e) {
+		        	continue;
+		        }
+		      }
+		  		return null;
+		  	}
+	  		list = CC.getNextActions(list[0]);
+	  	}
 	  }
-  	for (int i = 0; i < list.size(); i++) {
-  		CCAction ccaction = list.get(i);
+  	for (int i = 0; i < list.length; i++) {
+  		CCAction ccaction = list[i];
   		nextStates = this.getNextStates(ccaction, s);
 			for (int j = 0; j < nextStates.size(); j++) {
         TLCState state = nextStates.elementAt(j);

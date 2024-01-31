@@ -12,7 +12,7 @@ CONSTANT Value, Acceptor, Quorum, Ballot, None
 
 NP == Cardinality(Acceptor) \* number of a \in Acceptor
 
-MCMaxBallot == 1
+MCMaxBallot == 2
 MCBallot == 0..MCMaxBallot 
 
 \* We generate the quorum system instead of input manually

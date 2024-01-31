@@ -200,8 +200,13 @@ public abstract class Tool
 			TLCStateMutExt.setTool(this);
 		} else {
 			// Initialize state.
-			assert TLCState.Empty instanceof TLCStateMutCC;
-			TLCStateMutCC.setTool(this);
+			if(TLCGlobals.cc) {
+				assert TLCState.Empty instanceof TLCStateMutCC;
+				TLCStateMutCC.setTool(this);
+			}else {
+				assert TLCState.Empty instanceof TLCStateMut;
+				TLCStateMut.setTool(this);
+			}
 		}
       
 		Action next = this.getNextStateSpec();

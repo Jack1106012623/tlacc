@@ -13,6 +13,8 @@ import java.util.Arrays;
 import java.util.LinkedList;
 
 import tlc2.TLCGlobals;
+import tlc2.cc.CC;
+import tlc2.cc.CCAction;
 import tlc2.cc.TLCStateMutCC;
 import tlc2.output.EC;
 import tlc2.output.MP;
@@ -457,17 +459,6 @@ public final class Worker extends IdThread implements IWorker, INextStateFunctor
 				// nor implied actions are violated. It is thus eligible
 				// for further processing by other workers.
 				((TLCStateMutCC)curState).getCCState().setActionExecuted(true);
-				// test - begin
-				int cur_cc_level = ((TLCStateMutCC)curState).getCCState().getLevel();
-				int succ_cc_level = ((TLCStateMutCC)succState).getCCState().getLevel();
-				if(succ_cc_level<=cur_cc_level) {
-//					System.out.println("Error");
-				}
-				if(succ_cc_level<=1 || cur_cc_level<=1) {
-//					System.out.println("Error");
-				}
-				// test - end
-				
 				this.squeue.sEnqueue(succState);
 			}
 			return this;

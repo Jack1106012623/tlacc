@@ -8,6 +8,7 @@ import tlc2.value.IValueInputStream;
 import tlc2.value.IValueOutputStream;
 import tlc2.value.ValueInputStream;
 import tlc2.value.Values;
+import tlc2.value.impl.SetDiffValue;
 import tlc2.value.impl.SetEnumValue;
 import tlc2.value.impl.Value;
 import tlc2.value.impl.ValueExcept;
@@ -101,6 +102,12 @@ public class CCState extends Value implements Cloneable {
 	
 	// Only need to hash ccIter.
 	public long fingerPrint(long fp) {
+		if(msgs1 !=null) {
+			fp = this.msgs1.fingerPrint(fp);
+		}
+		if(msgs2 != null) {
+			fp = this.msgs2.fingerPrint(fp);
+		}
 		return this.pre.fingerPrint(fp);
 	}
 

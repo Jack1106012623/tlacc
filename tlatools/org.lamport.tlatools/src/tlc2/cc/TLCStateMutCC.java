@@ -272,8 +272,8 @@ public class TLCStateMutCC extends TLCState implements Cloneable, Serializable {
 			IValue val = mytool.eval(viewMap, Context.Empty, state);
 			fp = val.fingerPrint(fp);
 		}
-//		fp += this.cc.hashcode();
-		fp = this.cc.fingerPrint(fp);
+		// do a fingerPrint but not change fp
+		this.cc.fingerPrint(fp);
 		return fp;
 	}
 

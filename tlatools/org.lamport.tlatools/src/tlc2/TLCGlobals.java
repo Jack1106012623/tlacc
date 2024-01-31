@@ -260,4 +260,5 @@ public class TLCGlobals
 			return "unknown";
 		}
 	}
+	public static boolean cc = false;
 }

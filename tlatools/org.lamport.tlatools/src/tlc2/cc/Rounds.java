@@ -7,6 +7,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import tla2sany.semantic.OpDefNode;
+import tlc2.cc.CCAction.Type;
 import tlc2.tool.Action;
 import tlc2.tool.TLCState;
 import tlc2.util.Context;
@@ -25,6 +26,9 @@ public class Rounds {
 	 * @return Round i
 	 */
 	public Round getRound(int i) {
+		if(i>= rounds.size()) {
+			return null;
+		}
 		return rounds.get(i);
 	}
 	
@@ -41,14 +45,7 @@ public class Rounds {
 	public boolean isLastRound(int id) {
 		return id == rounds.size()-1;
 	}
-	//	args: null, (1,*)
-	private String[] parseActionArgs(String args){
-		String[] ret = null;
-		if(args != null) {
-			ret = args.substring(1, args.length()-1).split(",");
-		}
-		return ret;
-	}
+	
 	
 	private List<Action> getValidAction(String actionName, String actionArgs){
 		// actionArgs: (1,*), null
@@ -148,6 +145,10 @@ public class Rounds {
 				rcvActions[i] = rcvs.get(i);
 			}
 		}
+		if(rounds.size()==0 && sends==null) {
+			System.out.println("First Action should be Send");
+			System.exit(-1);
+		}
 		rounds.add(new Round(name, rounds.size(), sendActions, rcvActions));
 		
 	}
@@ -178,29 +179,54 @@ public class Rounds {
 			rounds.get(i).print();
 		}
 	}
+	public CCAction getFirstAction() {
+		return rounds.get(0).getCCAction(0);
+	}
+	public boolean isLastAction(CCAction action) {
+		int rn = action.getRoundNumber();
+		int idx = action.getIndex();
+		return isLastRound(rn) && rounds.get(rn).isLastIndex(idx);
+	}
+	
 	public CCAction getNext(CCAction action) {
 		
-		assert(action != null);
-		switch(action.getType()) {
-		case Init:{
-			return rounds.get(0).getBeginGuard();
+		if(action.getType() == Type.Init) {
+			return this.getFirstAction();
 		}
-		case BeginGuard:
-		case Send:
-		case MidGuard:
-		case Rcv:{
-			return rounds.get(action.getRoundNumber()).getCCAction(action.getIndex()+1);
-		}
-		case EndGuard: {
-			if(isLastRound(action.getRoundNumber())) {
+		
+		int rn = action.getRoundNumber();
+		int idx = action.getIndex();
+		if(getRound(rn).isLastIndex(idx)) {
+			// last action
+			if(isLastRound(rn)) {
 				return null;
 			}
-			return rounds.get(action.getRoundNumber()+1).getBeginGuard();
-		}
-		default:{ assert(false);return null;}
+			// next round's first action
+			return getRound(rn+1).getFirstAction();
+		} else {
+			// next action
+			return getRound(rn).getNext(action);
 		}
 	}
 	public static int newLevel() {
 		return ++CCActionCount;
 	}
+
+	public CCAction getNextSend(int preRoundId) {
+		for(int i=preRoundId+1;i<rounds.size();i++) {
+			Round r = getRound(i);
+			if(r.hasSend()) {
+				return r.getFirstAction();
+			}
+		}
+		return null;
+	}
+
+	public void printNexts() {
+		System.out.println("Printing next actions...");
+		for(int i=0;i<rounds.size();i++) {
+			rounds.get(i).printNexts();
+		}
+	}
+
 }

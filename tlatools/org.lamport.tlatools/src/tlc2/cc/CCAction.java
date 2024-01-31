@@ -1,6 +1,7 @@
 package tlc2.cc;
 
 import java.io.IOException;
+import java.util.ArrayList;
 
 import tlc2.cc.CCAction.Type;
 import tlc2.tool.Action;
@@ -14,14 +15,25 @@ import tlc2.value.ValueInputStream;
  * 
  */
 public class CCAction {
+	
 	public enum Type{Send, Rcv, BeginGuard, MidGuard, EndGuard, Init}
 	static public byte INTVALUE         =  1;
+	
 	private int roundNumber;
 	private int index;
 	private Action action;
 	private Type type;
 	private int level;
+	private CCAction[] nexts = null;
 	
+	public CCAction[] getNexts() {
+		return nexts;
+	}
+
+	public void setNexts(CCAction[] nexts) {
+		this.nexts = nexts;
+	}
+
 	public static CCAction Empty = new CCAction(-1,-1,null,Type.Init,Rounds.INIT_LEVEL);
 
 	CCAction(int roundNumber, int index, Action action, Type type, int level) {
@@ -48,7 +60,7 @@ public class CCAction {
 	
 	public String toString() {
 
-		String str = "[round = " + roundNumber + ", level = " + level;
+		String str = "[rn = " + roundNumber + ", idx = " + index;
 		switch(type) {
 		case Init: {
 			return "Initial Action";
@@ -138,6 +150,35 @@ public class CCAction {
 		}
 		return CC.getRound(roundNumber).getCCAction(index);
 	}
+	
+	public static void fillNexts(Rounds rounds) {
+		CCAction init = Empty;
+		
+	}
 
+	public String printNexts() {
+		String str = "[rn = " + roundNumber + ", idx = " + index;
+		switch(type) {
+		case Send:{
+			int id = action==null ? -1 : action.getId();
+			str += ", send = " + id;
+			break;
+		}
+		case Rcv:{
+			int id = action==null ? -1 : action.getId();
+			str += ", rcv = " + id;
+			break;
+		}
+		}
+		str += ", nexts=[";
+		for(int i=0;i<nexts.length;i++) {
+			str += nexts[i].getAction().getId();
+			if(i< nexts.length-1) {
+				str += ", ";
+			}
+		}
+		str += "]";
+		return str;
+	}
 	
 }

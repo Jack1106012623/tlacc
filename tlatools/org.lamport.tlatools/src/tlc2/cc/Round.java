@@ -1,6 +1,8 @@
 package tlc2.cc;
 
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.List;
 
 import tlc2.cc.CCAction.Type;
 import tlc2.tool.Action;
@@ -16,57 +18,117 @@ public class Round {
 	
 	private String name;
 	private int id;
-	
-	/**
-	 * iters store all CCIterators of a round
-	 */
-	private ArrayList<CCAction> iters = new ArrayList<>();
-	
-	
+	private ArrayList<CCAction> actions = new ArrayList<>();
+	boolean hasSend = false;
+	boolean hasRcv = false;
+	private int lastSendIndex = -1;
 	
 	public Round(String name, int id, Action[] sends, Action[] rcvs) {
 		this.name = name;
 		this.id = id;
 		
-		iters.add(new CCAction(id, iters.size(), null, Type.BeginGuard, Rounds.newLevel()));
-		
 		if(sends != null) {
+			hasSend = true;
 			for(int i=0;i<sends.length;i++) {
-				iters.add(new CCAction(id, iters.size(), sends[i], Type.Send, Rounds.newLevel()));
+				actions.add(new CCAction(id, actions.size(), sends[i], Type.Send, Rounds.newLevel()));
 			}
+			lastSendIndex = sends.length - 1;
 		}
 
-		iters.add(new CCAction(id, iters.size(), null, Type.MidGuard, Rounds.newLevel()));
 		if(rcvs != null) {
+			hasRcv = true;
 			for(int i=0;i<rcvs.length;i++) {
-				iters.add(new CCAction(id, iters.size(), rcvs[i], Type.Rcv, Rounds.newLevel()));
+				actions.add(new CCAction(id, actions.size(), rcvs[i], Type.Rcv, Rounds.newLevel()));
 			}
 		}
-		iters.add(new CCAction(id, iters.size(), null, Type.EndGuard, Rounds.newLevel()));
 	}
 	
 	
-	public boolean end(int index) {
-		return index >= iters.size();
+	public boolean isLastIndex(int index) {
+		return index == actions.size()-1;
+	}
+	public int size() {
+		return actions.size();
 	}
 	
 	public CCAction getEndGuard() {
-		return iters.get(iters.size()-1);
+		return actions.get(actions.size()-1);
 	}
 	public CCAction getBeginGuard() {
-		return iters.get(0);
+		return actions.get(0);
 	}
-	public CCAction getCCAction(int i) {
-		return iters.get(i);
+	public CCAction getCCAction(int index) {
+		return actions.get(index);
 	}
-	
+	public List<CCAction> getNexts(CCAction action) {
+		int index = action.getIndex();
+		return actions.subList(index+1, actions.size());
+	}
+	public List<CCAction> getAllActions(int index) {
+		return getNexts(-1);
+	}
 	public void print() {
 		String str = "round " + id + ": [";
-		for(int i=0;i<iters.size();i++) {
-			str += iters.get(i).toString() + ", ";
+		for(int i=0;i<actions.size();i++) {
+			str += actions.get(i).toString() + ", ";
 		}
 		str += "]";
 		System.out.println(str);
+	}
+
+
+	public boolean isLastSend(CCAction pre) {
+		int idx = pre.getIndex();
+		return idx == lastSendIndex;
+	}
+
+
+	public CCAction getNext(CCAction pre) {
+		int idx = pre.getIndex();
+		if(idx+1 == actions.size()) {
+			return null;
+		}else {
+			return actions.get(idx+1);
+		}
+	}
+
+
+	public boolean hasRcv() {
+		return hasRcv;
+	}
+
+
+	public boolean hasSend() {
+		return hasSend;
+	}
+
+
+	public CCAction getFirstAction() {
+		return actions.get(0);
+	}
+
+
+	public List<CCAction> getAllRcvs() {
+		return getNexts(lastSendIndex);
+	}
+
+
+	private List<CCAction> getNexts(int index) {
+		return actions.subList(index+1, actions.size());
+	}
+
+
+	public void printNexts() {
+		String str = "round " + id + ": [";
+		for(int i=0;i<actions.size();i++) {
+			str += actions.get(i).printNexts();
+			if(i<actions.size()-1) {
+				str += ", ";
+			}
+		}
+		str += "]";
+		System.out.println(str);
+		
 	}
 }
 

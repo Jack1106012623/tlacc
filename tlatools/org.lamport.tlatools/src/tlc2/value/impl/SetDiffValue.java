@@ -20,7 +20,8 @@ import util.Assert;
 public class SetDiffValue extends EnumerableValue implements Enumerable {
   public final Value set1;
   public final Value set2;
-  protected SetEnumValue diffSet;
+//  protected SetEnumValue diffSet;
+  public SetEnumValue diffSet;
 
   /* Constructor */
   public SetDiffValue(Value set1, Value set2) {

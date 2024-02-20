@@ -1,0 +1,36 @@
+@!@!@STARTMSG 2262:0 @!@!@
+TLC2 Version 2.18 of Day Month 20?? (rev: c2713de)
+@!@!@ENDMSG 2262 @!@!@
+@!@!@STARTMSG 2188:0 @!@!@
+Running Random Simulation with seed -2955988545893967035 with 1 worker on 8 cores with 1756MB heap and 64MB offheap memory [pid: 15460] (Windows 10 10.0 amd64, Oracle Corporation 14 x86_64).
+@!@!@ENDMSG 2188 @!@!@
+@!@!@STARTMSG 2220:0 @!@!@
+Starting SANY...
+@!@!@ENDMSG 2220 @!@!@
+Parsing file D:\project\tlacc_tla\simulation\Paxos.tla (file:/d:/project/tlacc_tla/simulation/Paxos.tla)
+Parsing file C:\Users\walter\AppData\Local\Temp\tlc-3336009429948309241\Integers.tla (jar:file:/D:/ProgramData/Vscode/extensions/alygin.vscode-tlaplus-nightly-2024.2.614/tools/tla2tools.jar!/tla2sany/StandardModules/Integers.tla)
+Parsing file C:\Users\walter\AppData\Local\Temp\tlc-3336009429948309241\FiniteSets.tla (jar:file:/D:/ProgramData/Vscode/extensions/alygin.vscode-tlaplus-nightly-2024.2.614/tools/tla2tools.jar!/tla2sany/StandardModules/FiniteSets.tla)
+Parsing file C:\Users\walter\AppData\Local\Temp\tlc-3336009429948309241\Naturals.tla (jar:file:/D:/ProgramData/Vscode/extensions/alygin.vscode-tlaplus-nightly-2024.2.614/tools/tla2tools.jar!/tla2sany/StandardModules/Naturals.tla)
+Parsing file D:\project\tlacc_tla\simulation\Voting.tla (file:/d:/project/tlacc_tla/simulation/Voting.tla)
+Parsing file C:\Users\walter\AppData\Local\Temp\tlc-3336009429948309241\Sequences.tla (jar:file:/D:/ProgramData/Vscode/extensions/alygin.vscode-tlaplus-nightly-2024.2.614/tools/tla2tools.jar!/tla2sany/StandardModules/Sequences.tla)
+Semantic processing of module Naturals
+Semantic processing of module Integers
+Semantic processing of module Sequences
+Semantic processing of module FiniteSets
+Semantic processing of module Voting
+Semantic processing of module Paxos
+@!@!@STARTMSG 2219:0 @!@!@
+SANY finished.
+@!@!@ENDMSG 2219 @!@!@
+@!@!@STARTMSG 2185:0 @!@!@
+Starting... (2024-02-07 13:12:20)
+@!@!@ENDMSG 2185 @!@!@
+@!@!@STARTMSG 2269:0 @!@!@
+Computed 1 initial states...
+@!@!@ENDMSG 2269 @!@!@
+@!@!@STARTMSG 2209:0 @!@!@
+Progress(2315) at 2024-02-07 13:13:20: 238800 states generated, -1 distinct states found, -1 states left on queue.
+@!@!@ENDMSG 2209 @!@!@
+@!@!@STARTMSG 2209:0 @!@!@
+Progress(4621) at 2024-02-07 13:14:20: 476832 states generated, -1 distinct states found, -1 states left on queue.
+@!@!@ENDMSG 2209 @!@!@

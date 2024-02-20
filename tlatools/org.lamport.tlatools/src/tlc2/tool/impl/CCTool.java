@@ -22,6 +22,7 @@ import tlc2.tool.TLCState;
 import tlc2.tool.TLCStateInfo;
 import tlc2.tool.Worker;
 import tlc2.tool.coverage.CostModel;
+import tlc2.tool.impl.Tool.Mode;
 import tlc2.util.Context;
 import tlc2.util.ExpectInlined;
 import tlc2.util.IdThread;
@@ -35,16 +36,21 @@ import util.Assert.TLCRuntimeException;
  * CCTool is for communication closure.
  */
 public final class CCTool extends Tool {
-	public CCTool(String mainFile, String configFile, String roundsFile , FilenameToStream resolver, Map<String, Object> params) {
+	public CCTool(String mainFile, String configFile, String roundsFile, FilenameToStream resolver, Map<String, Object> params) {
 		super(mainFile, configFile, resolver, params);
 		
+		CC.init(this, roundsFile);
+	}
+
+	public CCTool(String mainFile, String configFile, String roundsFile, FilenameToStream resolver, Mode mode, Map<String, Object> params) {
+		super(mainFile, configFile, resolver, mode, params);
 		CC.init(this, roundsFile);
 	}
 
 	@Override
   public boolean getNextStates(final INextStateFunctor functor, final TLCState state) {
 		CCState ccstate = ((TLCStateMutCC)state).getCCState();
-		CCAction[] list = CC.getNextActions(ccstate);
+		CCAction[] list = CC.getNextActions(ccstate.getPre());
 	  
 	  if(list.length == 1 && list[0].getType() == Type.Send) {
 	  	// if send cannot execute, do next send
@@ -62,6 +68,7 @@ public final class CCTool extends Tool {
 		return false;
 		
   }
+	
 	// if send cannot execute, return true
 	public boolean getNextStates(final INextStateFunctor functor, TLCState state, CCAction next) {
 		Action action = next.getAction();
@@ -110,6 +117,9 @@ public final class CCTool extends Tool {
 		return false;
 	}
 	
+	public boolean getNextStates(final INextStateFunctor functor, final TLCState state, final Action action) {
+		throw new UnsupportedOperationException("CCTool not support this method.");
+  }
 	
 	// The methods below are supposed to be inlined during execution for performance
 	// reasons, collapsing this class effectively into Tool. Later and in case of a
@@ -191,7 +201,7 @@ public final class CCTool extends Tool {
 	  
 	  StateVec nextStates = new StateVec(0);
 	  CCState ccstate = ((TLCStateMutCC)s).getCCState();
-	  CCAction[] list = CC.getNextActions(ccstate);
+	  CCAction[] list = CC.getNextActions(ccstate.getPre());
 	  if(list.length == 1 && list[0].getType() == Type.Send) {
 	  	CCAction pre = ccstate.getPre();
 	  	while(nextStates.size()==0 && list.length>0 && list[0].getType() == Type.Send) {
@@ -232,7 +242,7 @@ public final class CCTool extends Tool {
 	  IdThread.setCurrentState(s);
 	  StateVec nextStates = new StateVec(0);
 	  CCState ccstate = ((TLCStateMutCC)s).getCCState();
-	  CCAction[] list = CC.getNextActions(ccstate);
+	  CCAction[] list = CC.getNextActions(ccstate.getPre());
 	  if(list.length == 1 && list[0].getType() == Type.Send) {
 	  	CCAction pre = ccstate.getPre();
 	  	while(nextStates.size()==0 && list.length>0 && list[0].getType() == Type.Send) {

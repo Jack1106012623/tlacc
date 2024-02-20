@@ -24,6 +24,7 @@ import java.util.stream.Collectors;
 
 import tla2sany.st.Location;
 import tlc2.TLCGlobals;
+import tlc2.cc.CCSimulationWorker;
 import tlc2.module.TLCGetSet;
 import tlc2.output.EC;
 import tlc2.output.MP;

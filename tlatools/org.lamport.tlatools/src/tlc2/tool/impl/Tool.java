@@ -195,9 +195,17 @@ public abstract class Tool
 
       this.toolMode = mode;
 		// set variables to the static filed in the state
-		if (mode == Mode.Simulation || mode == Mode.Executor || mode == Mode.MC_DEBUG) {
+		if (mode == Mode.Executor || mode == Mode.MC_DEBUG) {
 			assert TLCState.Empty instanceof TLCStateMutExt;
 			TLCStateMutExt.setTool(this);
+		} else if(mode == Mode.Simulation) {
+			if(TLCGlobals.cc) {
+				assert TLCState.Empty instanceof TLCStateMutCC;
+				TLCStateMutCC.setTool(this);
+			}else {
+				assert TLCState.Empty instanceof TLCStateMutExt;
+				TLCStateMutExt.setTool(this);
+			}
 		} else {
 			// Initialize state.
 			if(TLCGlobals.cc) {

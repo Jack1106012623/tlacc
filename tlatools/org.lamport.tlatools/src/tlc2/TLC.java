@@ -1070,7 +1070,11 @@ public class TLC {
 					simulator = new SingleThreadedSimulator(tool, metadir, traceFile, deadlock, traceDepth, traceNum,
 							traceActions, rng, seed, resolver);
 				} else {
-					tool = new FastTool(mainFile, configFile, resolver, Tool.Mode.Simulation, params);
+					if(TLCGlobals.cc) {
+						tool = new CCTool(mainFile, configFile, roundsFile, resolver, Tool.Mode.Simulation, params);
+					} else {
+						tool = new FastTool(mainFile, configFile, resolver, Tool.Mode.Simulation, params);
+					}
 					simulator = new Simulator(tool, metadir, traceFile, deadlock, traceDepth, traceNum, traceActions, rng, seed,
 							resolver, TLCGlobals.getNumWorkers());
 				}
@@ -1158,8 +1162,6 @@ public class TLC {
 			if (teSpec != null) {
 				teSpec.generate(this.tool);
 			}
-			final long fpSetSize = TLCGlobals.mainChecker.getDistinctStatesGenerated();
-			System.out.println("Mid state:: " + CC.cnt + ", real disdinct states: " + (fpSetSize-CC.cnt));
 			MP.unsubscribeRecorder(this.recorder);
 			MP.flush();
 		}

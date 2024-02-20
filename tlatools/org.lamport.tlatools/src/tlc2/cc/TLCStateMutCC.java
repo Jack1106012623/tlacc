@@ -10,6 +10,7 @@ import tla2sany.semantic.OpDeclNode;
 import tla2sany.semantic.SemanticNode;
 import tla2sany.semantic.SymbolNode;
 import tlc2.TLCGlobals;
+import tlc2.tool.Action;
 import tlc2.tool.ITool;
 import tlc2.tool.StateVec;
 import tlc2.tool.TLCState;
@@ -29,6 +30,9 @@ public class TLCStateMutCC extends TLCState implements Cloneable, Serializable {
 	private CCState cc;
 	
 	private IValue values[];
+
+	private TLCState predecessor;
+	
 	private static ITool mytool = null;
 
 	/**
@@ -133,9 +137,15 @@ public class TLCStateMutCC extends TLCState implements Cloneable, Serializable {
 		for (int i = 0; i < len; i++) {
 			vals[i] = this.values[i];
 		}
-		return copy(new TLCStateMutCC(vals,this.cc.copy()));
+		return copyExt(new TLCStateMutCC(vals,this.cc.copy()));
 	}
-
+	
+	@Override
+	protected TLCState copy(TLCState copy) {
+	  super.copy(copy);
+	  return copyExt(copy);
+  }
+	
 	public final TLCState deepCopy() {
 		int len = this.values.length;
 		IValue[] vals = new IValue[len];
@@ -148,6 +158,32 @@ public class TLCStateMutCC extends TLCState implements Cloneable, Serializable {
 		return deepCopy(new TLCStateMutCC(vals,this.cc.copy()));
 	}
 
+	@Override
+	protected TLCState deepCopy(final TLCState copy) {
+		super.deepCopy(copy);
+		return copyExt(copy);
+	}
+	
+	private TLCState copyExt(TLCState copy) {
+		if (this.predecessor != null) {
+			copy.setPredecessor(this.predecessor);
+		}
+		return copy.setAction(getAction());
+	}
+
+	private Action action;
+
+	@Override
+	public Action getAction() {
+		return action;
+	}
+
+	@Override
+	public TLCState setAction(final Action action) {
+		this.action = action;
+		return this;
+	}
+	
 	public final StateVec addToVec(StateVec states) {
 		return states.addElement(this.copy());
 	}
@@ -411,4 +447,21 @@ public class TLCStateMutCC extends TLCState implements Cloneable, Serializable {
 	public void setCCState(CCState ccstate) {
 		this.cc = ccstate;
 	}
+	
+	@Override
+	public TLCState setPredecessor(final TLCState predecessor) {
+		this.predecessor = predecessor;
+		return super.setPredecessor(predecessor);
+	}
+
+	public TLCState getPredecessor() {
+		return predecessor;
+	}
+	
+	@Override
+	public TLCState unsetPredecessor() {
+		this.predecessor = null;
+		return this;
+	}
+	
 }

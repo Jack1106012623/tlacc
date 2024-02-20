@@ -196,11 +196,6 @@ public class CC  {
 		return rounds.firstRoundId();
 	}
 	
-	public static CCAction[] getNextActions(CCState ccstate) {
-		return ccstate.getPre().getNexts();
-	}
-	
-	
 	public static CCAction[] getNextActions(CCAction pre){
 		ArrayList<CCAction> ret = new ArrayList<>();
 		

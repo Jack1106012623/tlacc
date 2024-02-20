@@ -780,14 +780,24 @@ public class SpecProcessor implements ValueConstants, ToolGlobals {
 		}
 
 		// set variables to the static filed in the state
-		if (mode == Mode.Simulation || mode == Mode.MC_DEBUG) {
+		if (mode == Mode.Simulation) {
+			if(TLCGlobals.cc) {
+				TLCStateMutCC.setVariables(this.variablesNodes);
+			} else {
+				TLCStateMutExt.setVariables(this.variablesNodes);
+			}
+		} else if(mode == Mode.MC_DEBUG) {
 			TLCStateMutExt.setVariables(this.variablesNodes);
 		} else if (hasCallableValue) {
 			assert mode == Mode.Executor;
 			TLCStateMutExt.setVariables(this.variablesNodes);
 		} else {
 			assert mode == Mode.MC;
-			TLCStateMutCC.setVariables(this.variablesNodes);
+			if(TLCGlobals.cc) {
+				TLCStateMutCC.setVariables(this.variablesNodes);
+			} else {
+				TLCStateMut.setVariables(this.variablesNodes);
+			}
 		}
 
 		// Apply config file overrides to operator definitions:

@@ -93,7 +93,26 @@ public class CCAction {
 		str += "]";
 		return str;
 	}
-	
+	public String toStringH() {
+
+		String str = "";
+		String name = action==null ? "NULL" : action.getName() + " " + action.con;
+		switch(type) {
+		case Init: {
+			return "Initial Action";
+		}
+		case Send:{
+			str += "(S)" + name;
+			break;
+		}
+		case Rcv:{
+			str += "(R)" + name;
+			break;
+		}
+		default:
+		}
+		return str;
+	}
 	public int getRoundNumber() {
 		return roundNumber;
 	}

@@ -111,7 +111,7 @@ public final class CCTool extends Tool {
 		
 		for (int i = 0; i < nss.size(); i++) {
       TLCState succ = nss.elementAt(i);
-      ((TLCStateMutCC)succ).setCCState(succ_cc);
+      ((TLCStateMutCC)succ).setCCState(succ_cc.copy());
       functor.addElement(state,action,succ);
     }	
 		return false;

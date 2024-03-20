@@ -18,9 +18,12 @@ public class Rounds {
 	public static final int INIT_LEVEL = TLCState.INIT_LEVEL;
 	private static int CCActionCount = INIT_LEVEL;
 
-	public static String RE_Action = "(\\w+)(\\(.*\\))?";
-	public static String RE_Round = "\\["+ RE_Action + "," + RE_Action + "\\]";
-			
+	public static String Action_Id = "\\w+";
+  public static String Action_Args = String.format("\\([a-zA-Z0-9_*,]+\\)");
+  public static String Action = String.format("%s(?:%s)?", Action_Id, Action_Args);
+  public static String Actions = String.format("%s(?:\\+%s)*", Action, Action);
+  public static String RE_Round = String.format("\\[(%s),(%s)\\]",Actions, Actions);
+  public static String RE_Action = String.format("(%s)(%s)?", Action_Id, Action_Args);
 	/**
 	 * @param i : Starting with 0
 	 * @return Round i
@@ -76,10 +79,11 @@ public class Rounds {
 				CC.printError("CC currently do not support variable number of args: " + actionName);
 				System.exit(1);
 			}
-			if(arity == args.length) {
+			int args_length = args == null ? 0 : args.length;
+			if(arity == args_length) {
 				Context ctx = action.con;
 				boolean valid = true;
-				for(int i=args.length-1;i>=0;i--,ctx = ctx.next()) {
+				for(int i=args_length-1;i>=0;i--,ctx = ctx.next()) {
 					if(!args[i].equals("*") && !ctx.getValue().toString().equals(args[i])) {
 						valid = false;
 						break;
@@ -99,35 +103,49 @@ public class Rounds {
 		}
 		return ret;
 	}
+
 	public void addRound(String line) {
-		Pattern pattern = Pattern.compile(RE_Round);
-    Matcher matcher = pattern.matcher(line);
-    String SendName = null, SendArgs=null, RcvName=null, RcvArgs=null;
-    boolean syntax_error = false;
-    if (matcher.find()) {
-      int group = 1;
-      SendName = matcher.group(group++);
-      SendArgs = matcher.group(group++);
-      RcvName = matcher.group(group++);
-      RcvArgs = matcher.group(group);
-      if(SendName==null || RcvName==null) {
-      	syntax_error = true;
-      }
-    } else {
-    	syntax_error = true;
-    }
-    
-    if(syntax_error) {
-    	CC.printError("Syntax Error: " + line);
-    	System.exit(1);
-    }
-		List<Action> sendActions=null, rcvActions=null;
-		sendActions = getValidAction(SendName, SendArgs);
-		rcvActions = getValidAction(RcvName, RcvArgs);
-		
-		String RoundName = "";
-		addRound(RoundName, sendActions, rcvActions);
-		
+		Pattern round_pattern = Pattern.compile(RE_Round);
+		Matcher round_matcher = round_pattern.matcher(line);
+		if (round_matcher.matches()) {
+			String[] sends = round_matcher.group(1).split("\\+");
+			String[] rcvs = round_matcher.group(2).split("\\+");
+			Pattern action_pattern = Pattern.compile(RE_Action);
+			
+			List<Action> sendActions = new ArrayList<>(1), rcvActions = new ArrayList<>(1);
+			for (String send : sends) {
+				if(send.equals("NULL")) {
+					sendActions = null;
+					break;
+				}
+				Matcher action_matcher = action_pattern.matcher(send);
+				if (action_matcher.matches()) {
+					String aname = action_matcher.group(1);
+					String aargs = action_matcher.group(2);
+					sendActions.addAll(getValidAction(aname, aargs));
+				} else {
+					CC.printError("Syntax Error: " + line);
+				}
+			}
+			for (String rcv : rcvs) {
+				if(rcv.equals("NULL")) {
+					rcvActions = null;
+					break;
+				}
+				Matcher action_matcher = action_pattern.matcher(rcv);
+				if (action_matcher.matches()) {
+					String aname = action_matcher.group(1);
+					String aargs = action_matcher.group(2);
+					rcvActions.addAll(getValidAction(aname, aargs));
+				}else {
+					CC.printError("Syntax Error: " + line);
+				}
+			}
+			String RoundName = "";
+			addRound(RoundName, sendActions, rcvActions);
+		} else {
+			CC.printError("Syntax Error: " + line);
+		}
 	}
 	public void addRound(String name, List<Action> sends, List<Action> rcvs) {
 		Action[] sendActions=null, rcvActions=null;
@@ -176,7 +194,7 @@ public class Rounds {
 	public void print() {
 		System.out.println("Printing rounds...");
 		for(int i=0;i<rounds.size();i++) {
-			rounds.get(i).print();
+			rounds.get(i).printH();
 		}
 	}
 	public CCAction getFirstAction() {

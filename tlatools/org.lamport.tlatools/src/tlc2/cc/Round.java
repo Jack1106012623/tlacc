@@ -75,7 +75,14 @@ public class Round {
 		str += "]";
 		System.out.println(str);
 	}
-
+	public void printH() {
+		String str = "round " + id + ": [";
+		for(int i=0;i<actions.size();i++) {
+			str += actions.get(i).toStringH() + ", ";
+		}
+		str += "]";
+		System.out.println(str);
+	}
 
 	public boolean isLastSend(CCAction pre) {
 		int idx = pre.getIndex();

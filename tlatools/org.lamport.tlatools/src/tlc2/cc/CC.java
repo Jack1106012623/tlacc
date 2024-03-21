@@ -22,6 +22,7 @@ import tlc2.tool.ITool;
 import tlc2.tool.TLCState;
 import tlc2.tool.impl.CCTool;
 import tlc2.value.IValue;
+import tlc2.value.impl.FcnRcdValue;
 import tlc2.value.impl.SetDiffValue;
 import tlc2.value.impl.SetEnumValue;
 import tlc2.value.impl.Value;
@@ -80,6 +81,7 @@ public class CC  {
 	
 	public static void printError(String msg) {
 		ToolIO.out.println(msg);
+		System.exit(-1);
 	}
 	
 	
@@ -94,6 +96,7 @@ public class CC  {
 		try (BufferedReader reader = new BufferedReader(new FileReader(roundsFile))) {
       String line;
       while ((line = reader.readLine()) != null) {
+      	line = line.replaceAll("\\s", "");
       	if(line.startsWith("@")) {
 
       		Matcher matcher = meta_pattern.matcher(line);
@@ -268,16 +271,15 @@ public class CC  {
 		if(ccstate.getPre().getType() == Type.Init) {
 			return state.lookup(CC.getMsgs());
 		}
-		if(ccstate.getMsgs2() == null || state.lookup(CC.getMsgs())==null ) {
-			System.out.println("msgs2 is null");
-			System.exit(-1);
+		if(ccstate.getMsgs2() == null) {
+			return state.lookup(CC.getMsgs());
 		}
 		switch(msgsType) {
 		case SET:{
 			return new SetDiffValue((Value)state.lookup(CC.getMsgs()), (Value)ccstate.getMsgs2());
 		}
 		case FCN:{
-			return FcnUtil.diff((Value)ccstate.getMsgs2(), (Value)ccstate.getMsgs1());
+			return FcnUtil.diff((Value)state.lookup(CC.getMsgs()),(Value)ccstate.getMsgs2());
 		}
 		default:{
 			return null;
@@ -290,9 +292,10 @@ public class CC  {
 			return new SetEnumValue();
 		}
 		case FCN:{
-			return null;
+			return new FcnRcdValue(new Value[0], new Value[0], true);
 		}
 		default:{
+			CC.printError("Unsupported channel type!");
 			return null;
 		}
 		}

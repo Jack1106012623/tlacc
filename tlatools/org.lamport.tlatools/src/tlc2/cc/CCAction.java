@@ -25,7 +25,16 @@ public class CCAction {
 	private Type type;
 	private int level;
 	private CCAction[] nexts = null;
+	private CCAction next = null;
 	
+	public CCAction getNext() {
+		return next;
+	}
+
+	public void setNext(CCAction next) {
+		this.next = next;
+	}
+
 	public CCAction[] getNexts() {
 		return nexts;
 	}

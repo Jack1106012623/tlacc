@@ -163,12 +163,7 @@ public class Rounds {
 				rcvActions[i] = rcvs.get(i);
 			}
 		}
-		if(rounds.size()==0 && sends==null) {
-			System.out.println("First Action should be Send");
-			System.exit(-1);
-		}
 		rounds.add(new Round(name, rounds.size(), sendActions, rcvActions));
-		
 	}
 	public void addRound(String name, int[] sendIds, int[] rcvIds) {
 		Action[] sendActions=null, rcvActions=null;

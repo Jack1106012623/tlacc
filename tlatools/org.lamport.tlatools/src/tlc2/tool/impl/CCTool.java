@@ -205,15 +205,14 @@ public final class CCTool extends Tool {
 	  
 	  CCAction[] list = CC.getNextActions(ccstate.getPre());
   	for (int i = 0; i < list.length; i++) {
-  		CCAction ccaction = list[i];
-  		nextStates = this.getNextStates(ccaction, s);
+  		nextStates = this.getNextStates(list[i], s);
 			for (int j = 0; j < nextStates.size(); j++) {
         TLCState state = nextStates.elementAt(j);
         long nfp = state.fingerPrint();
         if (fp == nfp) {
         	state.setPredecessor(s);
         	assert !state.isInitial();
-        	return new TLCStateInfo(state, ccaction);
+        	return new TLCStateInfo(state, ((TLCStateMutCC)state).getCCState().getPre());
         }
       }
 		}
@@ -228,15 +227,14 @@ public final class CCTool extends Tool {
 	  CCAction[] list = CC.getNextActions(ccstate.getPre());
 	  
   	for (int i = 0; i < list.length; i++) {
-  		CCAction ccaction = list[i];
-  		nextStates = this.getNextStates(ccaction, s);
+  		nextStates = this.getNextStates(list[i], s);
 			for (int j = 0; j < nextStates.size(); j++) {
         TLCState state = nextStates.elementAt(j);
         try {
         	if (s1.equals(state)) {
         		state.setPredecessor(s);
         		assert !state.isInitial();
-        		return new TLCStateInfo(state, ccaction);
+        		return new TLCStateInfo(state, ((TLCStateMutCC)state).getCCState().getPre());
         	}
         } catch (TLCRuntimeException e) {
         	continue;

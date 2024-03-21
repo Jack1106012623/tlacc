@@ -1,7 +1,5 @@
 package tlc2.cc;
 
-import static org.junit.Assert.assertArrayEquals;
-
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileReader;

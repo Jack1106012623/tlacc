@@ -95,7 +95,9 @@ public final class CCTool extends Tool {
 
 	public boolean getNextStates(final INextStateFunctor functor, TLCState state, CCAction next) {
 		CCState succ_cc = new CCState(next);
-		
+		if(next.getRoundNumber() == 1 && next.getIndex()==2) {
+			System.out.println();
+		}
 		TLCState s0 = performOps(state, next, succ_cc);
 		
 		Action action = next.getAction();

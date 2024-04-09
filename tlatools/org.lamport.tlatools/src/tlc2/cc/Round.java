@@ -42,7 +42,9 @@ public class Round {
 			}
 		}
 	}
-	
+	public int getRoundNumber() {
+		return this.id;
+	}
 	
 	public boolean isLastIndex(int index) {
 		return index == actions.size()-1;

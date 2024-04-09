@@ -35,6 +35,10 @@ public class Rounds {
 		return rounds.get(i);
 	}
 	
+	public Round getFirstRound() {
+		return rounds.get(0);
+	}
+	
 	public int size() {
 		return rounds.size();
 	}

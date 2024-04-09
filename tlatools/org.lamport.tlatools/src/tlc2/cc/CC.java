@@ -203,7 +203,18 @@ public class CC  {
 		switch(pre.getType()) {
 		case Init:{
 			// add first send
-			ret.add(rounds.getNext(pre));
+			CCAction a = rounds.getNext(pre);
+			if(a.getType() == Type.Send) {
+				ret.add(rounds.getNext(pre));
+			}else {
+				Round cur = rounds.getFirstRound();
+				ret.addAll(cur.getAllRcvs());
+				CCAction nextSend = rounds.getNextSend(cur.getRoundNumber());
+				if(nextSend != null) {
+					ret.add(nextSend);
+				}
+			}
+			
 			break;
 		}
 		case Send:{

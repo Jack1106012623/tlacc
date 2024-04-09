@@ -112,7 +112,7 @@ Phase1a(b) == /\ Send([type |-> "1a", bal |-> b])
 (***************************************************************************)
 Phase1b(a) == /\ \E m \in msgs : 
                   /\ m.type = "1a"
-                \*   /\ m.bal > maxBal[a]
+                  /\ m.bal > maxBal[a]
                   /\ maxBal' = [maxBal EXCEPT ![a] = m.bal]
                   /\ Send([type |-> "1b", acc |-> a, bal |-> m.bal, 
                             mbal |-> maxVBal[a], mval |-> maxVal[a]])

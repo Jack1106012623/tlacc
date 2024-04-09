@@ -6,12 +6,14 @@ The branch tlacc_v2 currently has a version to use.
 
 TODO
 ------------
-- Update the usage
+- Add a rounds generator
+- Add the usage
+- Add repository's description
+- Make the code easy to read.
 
-License
--------
 
-Copyright (c) 199?-2003 HP Corporation  
-Copyright (c) 2003-2020 Microsoft Corporation
 
-Licensed under the [MIT License](http://lamport.azurewebsites.net/tla/license.html)
+
+
+
+

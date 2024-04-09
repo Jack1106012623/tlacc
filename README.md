@@ -1,11 +1,12 @@
-[![TLC Build Status](https://travis-ci.org/tlaplus/tlaplus.svg?branch=master)](https://travis-ci.org/tlaplus/tlaplus)
-[![Toolbox Build Status](https://github.com/tlaplus/tlaplus/workflows/CI/badge.svg?branch=master)](https://github.com/tlaplus/tlaplus/actions?query=workflow%3ACI)
 
-For more information, visit http://lamport.azurewebsites.net/tla/tla.html
+The project is to develop a model checker called TLACC for verifying the lossy synchronous execution of TLA+ specifications.
+TLACC is developed based on [TLC](https://github.com/tlaplus/tlaplus)。
+The branch tlacc_v2 currently has a version to use.
 
-Contributing
+
+TODO
 ------------
-Please read our [contribution guide](https://github.com/tlaplus/tlaplus/blob/master/CONTRIBUTING.md) before you start working on your contribution. We also have a [feature wishlist](https://github.com/tlaplus/tlaplus/blob/master/general/docs/contributions.md).
+- Update the usage
 
 License
 -------

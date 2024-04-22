@@ -33,15 +33,19 @@ import java.util.Deque;
 import java.util.LinkedList;
 import java.util.List;
 
+import org.eclipse.lsp4j.debug.EvaluateResponse;
 import org.eclipse.lsp4j.debug.Scope;
 import org.eclipse.lsp4j.debug.Variable;
 
 import tla2sany.semantic.ASTConstants;
+import tla2sany.semantic.FormalParamNode;
+import tla2sany.semantic.ModuleNode;
 import tla2sany.semantic.OpApplNode;
+import tla2sany.semantic.OpDefNode;
 import tla2sany.semantic.SemanticNode;
 import tla2sany.semantic.SymbolNode;
 import tlc2.TLCGlobals;
-import tlc2.tool.Action;
+import tlc2.tool.EvalControl;
 import tlc2.tool.EvalException;
 import tlc2.tool.FingerprintException;
 import tlc2.tool.TLCState;
@@ -51,6 +55,7 @@ import tlc2.tool.impl.DebugTool;
 import tlc2.tool.impl.Tool;
 import tlc2.util.Context;
 import tlc2.value.IValue;
+import tlc2.value.impl.BoolValue;
 import tlc2.value.impl.LazyValue;
 import tlc2.value.impl.RecordValue;
 import tlc2.value.impl.StringValue;
@@ -83,7 +88,7 @@ public class TLCStateStackFrame extends TLCStackFrame {
 		public String getTypeString() {
 			// Don't show the meaningless string "DebuggerValue" but "Evaluation pending" if
 			// a user hovers over this value in the variables view.
-			return "Evaluation pending... (value has not be determined yet)";
+			return "Evaluation pending... (value has not been determined yet)";
 		}
 	}
 	
@@ -212,12 +217,8 @@ public class TLCStateStackFrame extends TLCStackFrame {
 		return getStateAsVariable(toRecordValue(), state.getLevel() + ": " + getActionName(getT()));
 	}
 
-	private String getActionName(final TLCState state) {
-		if (state.getAction() == null) {
-			return "<Initial predicate>";
-		}
-		final Action a = state.getAction();
-		return a.getName() == null ? "Action" : a.getName().toString();
+	private String getActionName(final TLCState t) {
+		return (t.hasAction() ? t.getAction().getLocation() : "<???>");
 	}
 	
 	protected RecordValue toRecordValue() {
@@ -226,6 +227,21 @@ public class TLCStateStackFrame extends TLCStackFrame {
 
 	Variable[] getStateVariables() {
 		return getVariables(stateId);
+	}
+
+	@Override
+	protected Variable getStateAsVariable(final IValue value, String varName) {
+		final Variable variable = getVariable(value, UniqueString.of(varName));
+		// Because we convert the TLCState (getT) to a RecordValue to re-use the
+		// getVariable(..) implementation, the type (shown when hovering over the
+		// variable in the debugger's variable view) would be RecordValue. This would be
+		// bogus and is, thus, corrected to TLCState here.
+		try {
+			variable.setType(String.format("FP64: %s", Long.toString(getT().fingerPrint())));
+			return variable;
+		} catch (Exception e) {
+			return super.getStateAsVariable(value, varName);
+		}
 	}
 
 	@Override
@@ -255,6 +271,24 @@ public class TLCStateStackFrame extends TLCStackFrame {
 			return variable;
 		}
 		return super.getVariable(path);
+	}
+	
+	@Override
+	public EvaluateResponse getWatch(final String name) {
+		if (name == null) {
+			return new EvaluateResponse();
+		} 
+
+		final IValue lookup = getT().lookup(name);
+		if (lookup != null) { // null when there is no such variable or the value of the variable has not yet been determined.
+			final Variable variable = getVariable(lookup, name);
+			final EvaluateResponse er = new EvaluateResponse();
+			er.setResult(variable.getValue());
+			er.setVariablesReference(variable.getVariablesReference());
+			return er;
+		}
+		
+		return super.getWatch(name);
 	}
 	
 	protected boolean isPrimeScope(LinkedList<SemanticNode> path) {
@@ -325,13 +359,54 @@ public class TLCStateStackFrame extends TLCStackFrame {
 	@Override
 	public boolean matches(final TLCSourceBreakpoint bp) {
 		if (super.matches(bp)) {
+			boolean fire = true;
 			if (bp.getHits() > 0) {
 				// TODO: getLast here to have uniform hit count for actions and their
 				// state-constraint.
-				return getT().getLevel() >= bp.getHits(); 
+				fire = getT().getLevel() >= bp.getHits();
 			}
-			return true;
+			return matchesExpression(bp, fire);
 		}
 		return false;
+	}
+
+	protected boolean matchesExpression(final TLCSourceBreakpoint bp, boolean fire) {
+		if (bp.getCondition() != null && !bp.getCondition().isEmpty()) {
+			final ModuleNode module = tool.getSpecProcessor().getRootModule();
+			final OpDefNode odn = module.getOpDef(bp.getCondition());
+			// odn == null should be redundant because of check in
+			// tlc2.debug.TLCDebugger.setBreakpoints(SetBreakpointsArguments)
+			if (odn != null) {
+				
+			// Wrap in tool.eval(() -> to evaluate the debug expression *outside* of the
+			// debugger. In that case, we would have to handle the exceptions below.
+//			fire = tool.eval(() -> {
+				try {					
+					// Create the debug expression's context from the stack frame's context.
+					// Best effort as lookup is purely syntactic on UniqueString!
+					Context ctxt = Context.Empty;
+					for (FormalParamNode p : odn.getParams()) {
+						ctxt = ctxt.cons(p, getContext().lookup(s -> s.getName().equals(p.getName())));
+					}
+					
+					final IValue eval = tool.noDebug().eval(odn.getBody(), ctxt, getS(), getT(), EvalControl.Clear);
+					if (eval instanceof BoolValue) {
+//						return 
+								fire &= ((BoolValue) eval).val;
+					}
+				} catch (TLCRuntimeException | EvalException | FingerprintException e) {
+					// TODO DAP spec not clear on how to handle an evaluation failure of a debug
+					// expression. Given our limitation that debug expressions have to be defined in
+					// the spec, the same error will be raised like for any other broken expression
+					// in the spec. In other words, a user may use the debugger to debug a debug
+					// expression.
+					
+					// Swallow the exception to make TLC continue instead of crash.
+				}
+//				return false;
+//			});
+			}
+		}
+		return fire;
 	}
 }

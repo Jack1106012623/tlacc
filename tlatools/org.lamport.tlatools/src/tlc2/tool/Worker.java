@@ -12,6 +12,9 @@ import java.io.IOException;
 import java.util.Arrays;
 import java.util.LinkedList;
 
+import tla2sany.semantic.ExprNode;
+import tla2sany.semantic.OpDeclNode;
+import tla2sany.semantic.SemanticNode;
 import tlc2.TLCGlobals;
 import tlc2.cc.CC;
 import tlc2.cc.CCAction;
@@ -24,6 +27,7 @@ import tlc2.tool.impl.Tool;
 import tlc2.tool.impl.Tool.Mode;
 import tlc2.tool.queue.IStateQueue;
 import tlc2.util.BufferedRandomAccessFile;
+import tlc2.util.Context;
 import tlc2.util.IStateWriter;
 import tlc2.util.IdThread;
 import tlc2.util.SetOfStates;
@@ -37,7 +41,8 @@ import util.WrongInvocationException;
 
 public final class Worker extends IdThread implements IWorker, INextStateFunctor {
 
-	protected static final boolean coverage = TLCGlobals.isCoverageEnabled();
+	protected static final boolean coverage = TLCGlobals.Coverage.isActionEnabled();
+	protected static final boolean variableCoverage = TLCGlobals.Coverage.isVariableEnabled();
 	private static final int INITIAL_CAPACITY = 16;
 	
 	/**
@@ -172,7 +177,7 @@ public final class Worker extends IdThread implements IWorker, INextStateFunctor
 
 		// Add the stuttering step:
 		liveNextStates.put(curStateFP, curState);
-		this.tlc.allStateWriter.writeState(curState, curState, true, IStateWriter.Visualization.STUTTERING);
+		this.tlc.allStateWriter.writeState(curState, curState, IStateWriter.IsUnseen, IStateWriter.Visualization.STUTTERING);
 
 		// Contrary to exceptions that are thrown during the evaluation of the init
 		// predicate and the next-state relation, the code below causes the call stack
@@ -185,7 +190,7 @@ public final class Worker extends IdThread implements IWorker, INextStateFunctor
 		// CallStackTool cannot always be enabled at the site where exceptions
 		// originate, and c) there is no global exception handling.
 		try {
-			this.tlc.liveCheck.addNextState(tlc.tool.getLiveness(), curState, curStateFP, liveNextStates);
+			this.tlc.liveCheck.addNextState(tlc.tool.noDebug(), curState, curStateFP, liveNextStates);
 		} catch (EvalException | TLCRuntimeException origExp) {
 			synchronized (this.tlc) {
 				if (this.tlc.printedLivenessErrorStack) {
@@ -202,7 +207,7 @@ public final class Worker extends IdThread implements IWorker, INextStateFunctor
 
 				// TODO: Try to pass DebugTool instead of tool.getLiveness to enable the TLC
 				// debugger for liveness checking.
-				final CallStackTool cTool = new CallStackTool(tlc.tool.getLiveness());
+				final CallStackTool cTool = new CallStackTool(tlc.tool.noDebug());
 				try {
 					this.tlc.liveCheck.addNextState(cTool, curState, curStateFP, liveNextStates);
 					// Regular evaluation with tlc.tool.getLiveness failed but CallStackTool
@@ -251,7 +256,8 @@ public final class Worker extends IdThread implements IWorker, INextStateFunctor
 	
 	/* Statistics */
 
-	final void incrementStatesGenerated(long l) {
+	@Override
+	public final void incrementStatesGenerated(long l) {
 		this.statesGenerated += l;		
 	}
 	
@@ -439,6 +445,20 @@ public final class Worker extends IdThread implements IWorker, INextStateFunctor
 			boolean unseen = true;
 			if (inModel) {
 				unseen = !isSeenState(curState, succState, action);
+			} else if (allStateWriter.isConstrained()) {
+				final ExprNode[] constraints = this.tool.getModelConstraints();
+				for (int i = 0; i < constraints.length; i++) {
+					if (!this.tool.isInModel(constraints[i], succState)) {
+						this.allStateWriter.writeState(curState, succState, IStateWriter.IsNotInModel, action, constraints[i]);				
+					}
+				}
+			    final ExprNode[] constrs = this.tool.getActionConstraints();
+			    for (int i = 0; i < constrs.length; i++) {
+			    	if (!this.tool.isInActions(constrs[i], curState, succState)) {
+						this.allStateWriter.writeState(curState, succState, IStateWriter.IsNotInModel, action, constraints[i]);				
+			    	}
+			    }
+			    return true;
 			}
 			
 			// Check if succState violates any invariant:
@@ -460,6 +480,11 @@ public final class Worker extends IdThread implements IWorker, INextStateFunctor
 				// for further processing by other workers.
 				((TLCStateMutCC)curState).getCCState().setActionExecuted(true);
 				this.squeue.sEnqueue(succState);
+				if (variableCoverage) { 
+					for (final OpDeclNode odn : TLCState.vars) {
+						odn.count(succState.lookup(odn.getName()));
+					}
+				}
 			}
 			return this;
 		} catch (Exception e) {
@@ -471,6 +496,15 @@ public final class Worker extends IdThread implements IWorker, INextStateFunctor
 			throw new WrappingRuntimeException(e, succState);
 		}
 	}
+	
+	@Override
+	public TLCState addUnsatisfiedState(final TLCState curState, final Action action, final TLCState succState,
+			final SemanticNode pred, final Context c) {
+		if (this.allStateWriter.isConstrained()) {
+			this.allStateWriter.writeState(curState, succState, IStateWriter.IsNotInModel, action, pred);
+		}
+		return succState;
+	}	
 	
 	@SuppressWarnings("serial")
 	private static class WrappingRuntimeException extends RuntimeException {
@@ -497,7 +531,7 @@ public final class Worker extends IdThread implements IWorker, INextStateFunctor
 		final long fp = succState.fingerPrint();
 		final boolean seen = this.theFPSet.put(fp);
 		// Write out succState when needed:
-		this.allStateWriter.writeState(curState, succState, !seen, action);
+		this.allStateWriter.writeState(curState, succState, seen ? IStateWriter.IsSeen : IStateWriter.IsUnseen, action);
 		if (!seen) {
 			// Write succState to trace only if it satisfies the
 			// model constraints. Do not enqueue it yet, but wait
@@ -616,6 +650,21 @@ public final class Worker extends IdThread implements IWorker, INextStateFunctor
 			trace.addAll(Arrays.asList(tlc.getTraceInfo(succState)));
 			trace.add(tool.getState(succState, curState));
 		}
-		tool.checkPostConditionWithCounterExample(new CounterExample(trace));
+        
+		// Evaluate the ALIAS on the actions (pairs of states) of the trace before the
+        // trace is wrapped in a CounterExample below (ALIAS won't be evaluated on a
+        // trace of length 1, i.e., just an initial state).
+        // Evaluating the ALIAS e.g. gives users a way to format a counterexample that
+        // is serialized into some custom format such as JSON with TLC's `-dumptrace`,
+        // *without* a) implementing their own `-dumptrace` exporter (see e.g. _JsonTrace.tla),
+        // while b) having the expressiveness of action- as opposed to state-level formulas.
+        for (int i = 0; i < trace.size(); i++) {
+                final TLCStateInfo s = trace.get(i);
+                final TLCStateInfo t = i + 1< trace.size() ? trace.get(i+1) : s;
+                final TLCStateInfo alias = tool.evalAlias(s, t.getOriginalState());
+                trace.set(i, alias);
+        }
+        
+        tool.checkPostConditionWithCounterExample(new CounterExample(trace));
 	}
 }

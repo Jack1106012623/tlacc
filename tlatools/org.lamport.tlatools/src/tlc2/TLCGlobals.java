@@ -124,7 +124,9 @@ public class TLCGlobals
     public static boolean warn = true;
 
     // The time interval to report progress (in milliseconds)
-    public static final int progressInterval = 1 * 60 * 1000;
+    // max prevents div-by-zero if users passes 0.
+	public static final int progressInterval = Math
+			.max(Math.abs(Integer.getInteger(TLC.class.getName() + ".progressInterval", 60)), 1) * 1000;
 
     // The time interval to checkpoint. (in milliseconds)
 	public static long chkptDuration = Integer.getInteger(
@@ -261,4 +263,30 @@ public class TLCGlobals
 		}
 	}
 	public static boolean cc = false;
+	
+	public static final class Coverage {
+		
+		private static final int coverage = Integer.getInteger(TLCGlobals.class.getName() + ".coverage", 0);
+
+		public static boolean isVariableEnabled() {
+			if (isCoverageEnabled()) {
+				return true;
+			}
+			return (coverage & 2) > 0;
+		}
+
+		public static boolean isActionEnabled() {
+			if (isCoverageEnabled()) {
+				return true;
+			}
+			return (coverage & 1) > 0;
+		}
+
+		public static boolean isEnabled() {
+			if (isCoverageEnabled()) {
+				return true;
+			}
+			return coverage > 0;
+		}
+	}
 }

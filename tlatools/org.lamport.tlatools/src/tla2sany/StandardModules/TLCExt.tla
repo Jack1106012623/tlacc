@@ -1,6 +1,7 @@
 ------------------------------- MODULE TLCExt -------------------------------
 
 LOCAL INSTANCE TLC
+LOCAL INSTANCE Integers
   (*************************************************************************)
   (* Imports the definitions from the modules, but doesn't export them.    *)
   (*************************************************************************)
@@ -26,6 +27,12 @@ AssertError(err, exp) ==
 
 -----------------------------------------------------------------------------
 
+TLCGetAndSet(key, Op(_,_), val, defaultVal) ==
+    LET oldVal == IF key \in DOMAIN TLCGet("all") THEN TLCGet(key) ELSE defaultVal
+    IN CHOOSE v \in {oldVal} : TLCSet(key, Op(oldVal, val))
+
+-----------------------------------------------------------------------------
+
 Trace == 
   (******************************************************************************)
   (* The sequence of states (represented as a record whose DOMAIN is the set of *)
@@ -45,7 +52,7 @@ Trace ==
 
 -----------------------------------------------------------------------------
 
-(* HERE BE DRAGONS! The operators below are experimental! *)
+(* HERE BE DRAGONS! The operators below are experimental! You will probably not need them! *)
 
 CounterExample ==
     (****************************************************************************)
@@ -64,7 +71,16 @@ CounterExample ==
     TRUE
 
 ToTrace(CE) ==
-	TRUE
+	(* 
+	This definition is implemented by the TLCExt#toTrace Java module override. It
+	is commented because FiniteSetsExt is part of the CommunityModules, but not
+	tla2tools.
+
+	LET F == INSTANCE FiniteSetsExt
+	IN F!FoldSet(LAMBDA a, acc: acc @@ [n \in {a[1]} |-> a[2]], [n \in {} |-> n], CounterExample.state)
+
+	*)
+	TRUE 
 
 -----------------------------------------------------------------------------
 
@@ -152,5 +168,13 @@ TLCCache(expression, closure) ==
   (* constant-level formulas.                                                   *)
   (******************************************************************************)
   expression
+
+TLCFP(var) ==
+  (******************************************************************************)
+  (* Equals the value that TLC gives to the given input when the value is       *)
+  (* being fingerprinted.                                                       *)
+  (* Implementation note: Equals the lower 32 bits until TLC supports longs     *)
+  (******************************************************************************)
+  CHOOSE i \in Int: TRUE
 
 ============================================================================

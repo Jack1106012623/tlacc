@@ -36,6 +36,7 @@ import java.util.TimeZone;
 import java.util.stream.Collectors;
 
 import tla2sany.semantic.ExprOrOpArgNode;
+import tla2sany.semantic.OpDeclNode;
 import tlc2.TLCGlobals;
 import tlc2.output.EC;
 import tlc2.overrides.Evaluation;
@@ -51,6 +52,7 @@ import tlc2.tool.impl.Tool;
 import tlc2.util.Context;
 import tlc2.util.IdThread;
 import tlc2.util.Vect;
+import tlc2.util.statistics.CountDistinct;
 import tlc2.value.ValueConstants;
 import tlc2.value.Values;
 import tlc2.value.impl.BoolValue;
@@ -65,13 +67,6 @@ import util.UniqueString;
 
 public class TLCGetSet implements ValueConstants {
 
-	public static Value narrowToIntValue(final long value) {
-        if ((int)value != value) {
-        	return IntValue.ValNegOne;
-        }
-        return IntValue.gen((int) value);
-	}
-
 	// TLCSet(..)
 	private static final UniqueString EXIT = UniqueString.uniqueStringOf("exit");
 	private static final UniqueString PAUSE = UniqueString.uniqueStringOf("pause");
@@ -79,7 +74,8 @@ public class TLCGetSet implements ValueConstants {
 	// TLCGet(..)
 	private static final UniqueString CONFIG = UniqueString.uniqueStringOf("config");
 	private static final UniqueString SPEC = UniqueString.uniqueStringOf("spec");
-	private static final UniqueString ACTION = UniqueString.uniqueStringOf("action");
+	private static final UniqueString COVERAGE = UniqueString.uniqueStringOf("coverage");
+	public static final UniqueString ACTION = UniqueString.uniqueStringOf("action");
 	public static final UniqueString INSTALL = UniqueString.uniqueStringOf("install");
 	public static final UniqueString ID = UniqueString.uniqueStringOf("id");
 
@@ -99,7 +95,7 @@ public class TLCGetSet implements ValueConstants {
 	public static final UniqueString REVISION = UniqueString.uniqueStringOf("revision");
 	public static final UniqueString REV_TIMESTAMP = UniqueString.uniqueStringOf("timestamp");
 	public static final UniqueString REV_DATE = UniqueString.uniqueStringOf("date");
-	public static final UniqueString REV_COUNT = UniqueString.uniqueStringOf("count");
+	public static final UniqueString COUNT = UniqueString.uniqueStringOf("count");
 	public static final UniqueString REV_TAG = UniqueString.uniqueStringOf("tag");
 	
 	private static final UniqueString SPEC_IMPLIEDINITS = UniqueString.of("impliedinits");
@@ -108,6 +104,7 @@ public class TLCGetSet implements ValueConstants {
 	private static final UniqueString SPEC_TERMPORALS = UniqueString.of("temporals");
 	public static final UniqueString SPEC_ACTIONS = UniqueString.of("actions");
 	private static final UniqueString SPEC_INITS = UniqueString.of("inits");
+	private static final UniqueString SPEC_VARS = UniqueString.of("variables");
 
 	// TLCGet(..)
 	// BFS & Simulation mode
@@ -134,9 +131,16 @@ public class TLCGetSet implements ValueConstants {
 	
 	// BFS: The number of distinct states.
 	public static final UniqueString DISTINCT = UniqueString.uniqueStringOf("distinct");
+	// BFS: The number of initial states.
+	public static final UniqueString INITIAL = UniqueString.uniqueStringOf("initial");
 	// BFS: The number of unexplored distinct states.
 	public static final UniqueString QUEUE = UniqueString.uniqueStringOf("queue");
-
+	// Simulation: The number of times the simulator picked a disabled action.
+	public static final UniqueString RETRIES = UniqueString.uniqueStringOf("retries");
+	// Simulation: The number of times the simulator picked a disabled action.
+	public static final UniqueString DISTINCT_VALUES = UniqueString.uniqueStringOf("distinctvalues");
+	public static final UniqueString LEVEL_MEAN = UniqueString.uniqueStringOf("levelmean");
+	public static final UniqueString LEVEL_VARIANCE = UniqueString.uniqueStringOf("levelvariance");
 	
 	public static final long serialVersionUID = 20210330L;
 
@@ -280,7 +284,7 @@ public class TLCGetSet implements ValueConstants {
 			final UniqueString[] n = new UniqueString[4];
 			final Value[] v = new Value[n.length];
 			
-			n[0] = TLCGetSet.REV_COUNT;
+			n[0] = TLCGetSet.COUNT;
 			v[0] = IntValue.gen(TLCGlobals.getSCMCommits());
 			
 			final Date buildDate = TLCGlobals.getBuildDate();
@@ -303,14 +307,14 @@ public class TLCGetSet implements ValueConstants {
 			/*
 			 * Add operator `TLC!TLCGet("spec")`.
 			 */
-			final UniqueString[] n = new UniqueString[6];
+			final UniqueString[] n = new UniqueString[7];
 			final Value[] v = new Value[n.length];
 
 			// Inits as found by spec processing.
 			final List<Value> l = new ArrayList<>();
 			final Vect<Action> inits = tool.getInitStateSpec();
 			for (int i = 0; i < inits.size(); i++) {
-				l.add(new RecordValue(inits.elementAt(i)));
+				l.add(init2Value(inits.elementAt(i)));
 			}
 			n[0] = SPEC_INITS;
 			v[0] = new SetEnumValue(new ValueVec(l), false);
@@ -318,25 +322,29 @@ public class TLCGetSet implements ValueConstants {
 			// Actions as found by spec processing. For a sub-action with non-zero arity,
 			// TLC has multiple copies.
 			n[1] = SPEC_ACTIONS;
-			v[1] = new SetEnumValue(new ValueVec(Arrays.asList(tool.getActions()).stream()
-					.map(a -> new RecordValue(a)).collect(Collectors.toList())), false);
+			v[1] = new SetEnumValue(new ValueVec(Arrays.asList(tool.getActions()).stream().map(TLCGetSet::action2Value)
+					.collect(Collectors.toList())), false);
 
 			n[2] = SPEC_TERMPORALS;
 			v[2] = new SetEnumValue(new ValueVec(Arrays.asList(tool.getTemporals()).stream()
-					.map(a -> new RecordValue(a)).collect(Collectors.toList())), false);
-			
+					.map(TLCGetSet::property2Value).collect(Collectors.toList())), false);
+
 			n[3] = SPEC_INVARIANTS;
 			v[3] = new SetEnumValue(new ValueVec(Arrays.asList(tool.getInvariants()).stream()
-					.filter(a -> !a.isInternal()).map(a -> new RecordValue(a)).collect(Collectors.toList())), false);
-			
+					.filter(a -> !a.isInternal()).map(TLCGetSet::property2Value).collect(Collectors.toList())), false);
+
 			n[4] = SPEC_IMPLIEDINITS;
 			v[4] = new SetEnumValue(new ValueVec(Arrays.asList(tool.getImpliedInits()).stream()
-					.map(a -> new RecordValue(a)).collect(Collectors.toList())), false);
-			
+					.map(TLCGetSet::property2Value).collect(Collectors.toList())), false);
+
 			n[5] = SPEC_IMPLIEDTEMPORALS;
 			v[5] = new SetEnumValue(new ValueVec(Arrays.asList(tool.getImpliedTemporals()).stream()
-					.map(a -> new RecordValue(a)).collect(Collectors.toList())), false);
-			
+					.map(TLCGetSet::property2Value).collect(Collectors.toList())), false);
+
+			n[6] = SPEC_VARS;
+			v[6] = new SetEnumValue(new ValueVec(Arrays.asList(tool.getSpecProcessor().getVariablesNodes()).stream()
+					.map(TLCGetSet::variable2Value).collect(Collectors.toList())), false);
+
 			return new RecordValue(n, v, false);
 		} else if (LEVEL == sv.val) {
 			// Contrary to "diameter", "level" is not monotonically increasing. "diameter"
@@ -390,9 +398,9 @@ public class TLCGetSet implements ValueConstants {
 				have more confidence in its usefulness.
 			 */
 			if (s0 == null || s0.getAction() == null) {
-				return new RecordValue(Action.UNKNOWN, Context.Empty);
+				return new RecordValue(Action.UNKNOWN);
 			} else {
-				return new RecordValue(s0.getAction(), s0.getAction().con);
+				return new RecordValue(s0.getAction());
 			}
 		} else if (ALL_VALUES == sv.val) {
 			/*
@@ -462,9 +470,56 @@ public class TLCGetSet implements ValueConstants {
 					}
 				}
 				return BoolValue.ValTrue;
+			} else if (sv.val.startsWith("-D")) {
+				System.setProperty(sv.val.substring(2), val.toString());
+				return BoolValue.ValTrue;
 			}
 		}
 		throw new EvalException(EC.TLC_MODULE_ARGUMENT_ERROR,
 				new String[] { "first", "TLCSet", "nonnegative integer", Values.ppr(vidx.toString()) });
+	}
+	
+	private static Value action2Value(final Action a) {
+		if (a.cm.hasValues()) {
+			final RecordValue coverage = new RecordValue(new UniqueString[] { GENERATED, DISTINCT }, new Value[] {
+					IntValue.narrowToIntValue(a.cm.getPrimary()), IntValue.narrowToIntValue(a.cm.getSecondary()) },
+					false);
+			return new RecordValue(a, COVERAGE, coverage);
+		}
+		return new RecordValue(a);
+	}
+	
+	private static Value init2Value(final Action a) {
+		if (a.cm.hasValues()) {
+			final RecordValue coverage = new RecordValue(new UniqueString[] { GENERATED, DISTINCT },
+					new Value[] { IntValue.narrowToIntValue(a.cm.getPrimary() + a.cm.getSecondary()),
+							IntValue.narrowToIntValue(a.cm.getPrimary()) },
+					false);
+
+			return new RecordValue(a, COVERAGE, coverage);
+		}
+		return new RecordValue(a);
+	}
+	
+	private static Value property2Value(final Action a) {
+		if (a.cm.hasValues()) {
+			final CostModel cm = a.cm.getChild();
+			final RecordValue coverage = new RecordValue(new UniqueString[] { COUNT },
+					new Value[] { IntValue.narrowToIntValue(cm.getPrimary()) },
+					false);
+
+			return new RecordValue(a, COVERAGE, coverage);
+		}
+		return new RecordValue(a);
+	}
+
+	private static Value variable2Value(final OpDeclNode odn) {
+		final CountDistinct cd = odn.getCountDistinct();
+		if (cd != null) {
+			final RecordValue coverage = new RecordValue(new UniqueString[] { DISTINCT },
+					new Value[] { IntValue.narrowToIntValue(cd.count()) }, false);
+			return new RecordValue(odn, COVERAGE, coverage);
+		}
+		return new RecordValue(odn);
 	}
 }

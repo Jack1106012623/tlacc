@@ -43,6 +43,7 @@ import tla2sany.semantic.ExprNode;
 import tla2sany.semantic.ExprOrOpArgNode;
 import tla2sany.semantic.LetInNode;
 import tla2sany.semantic.OpApplNode;
+import tla2sany.semantic.OpDeclNode;
 import tla2sany.semantic.OpDefNode;
 import tla2sany.semantic.SemanticNode;
 import tla2sany.semantic.Subst;
@@ -56,6 +57,7 @@ import tlc2.tool.coverage.ActionWrapper.Relation;
 import tlc2.util.Context;
 import tlc2.util.ObjLongTable;
 import tlc2.util.Vect;
+import tlc2.util.statistics.CountDistinct;
 
 /**
  * <h1>Why a CostModel:</h1> Why a CostModelCreator to traverses the semantic
@@ -163,8 +165,9 @@ public class CostModelCreator extends ExplorerVisitor {
 	private ActionWrapper root;
 	private Context ctx = Context.Empty;
 	
-	private CostModelCreator(final SemanticNode root, final ITool tool) {
+	private CostModelCreator(final SemanticNode root, final ActionWrapper aw, final ITool tool) {
 		this.tool = tool;
+		this.root = aw;
 		this.stack.push(new RecursiveOpApplNodeWrapper());
 		root.walkGraph(new CoverageHashTable(opDefNodes), this);
 	}
@@ -172,7 +175,7 @@ public class CostModelCreator extends ExplorerVisitor {
 	// root cannot be type OpApplNode but has to be SemanticNode (see Test216).
 	private CostModelCreator(final ITool tool) {
 		this.tool = tool;
-		// MAK 10/08/2018: Annotate OApplNodes in the semantic tree that correspond to
+		// MAK 10/08/2018: Annotate OpApplNodes in the semantic tree that correspond to
 		// primed vars. It is unclear why OpApplNodes do not get marked as primed when
 		// instantiated. The logic in Tool#getPrimedLocs is too obscure to tell.
 		final ObjLongTable<SemanticNode>.Enumerator<SemanticNode> keys = tool.getPrimedLocs().keys();
@@ -245,7 +248,7 @@ public class CostModelCreator extends ExplorerVisitor {
 				final OpDefNode odn = (OpDefNode) val;
 				final ExprNode body = odn.getBody();
 				if (body instanceof OpApplNode) {
-					final CostModelCreator substitution = new CostModelCreator(body, tool);
+					final CostModelCreator substitution = new CostModelCreator(body, root, tool);
 					oan.addChild((OpApplNodeWrapper) substitution.getModel());
 				}
 			}			
@@ -418,6 +421,10 @@ public class CostModelCreator extends ExplorerVisitor {
     			impliedActions.cm = collector.getCM(impliedActions, Relation.PROP);
     		}
         }
+        
+        for (OpDeclNode odn : tool.getSpecProcessor().getVariablesNodes()) {
+			odn.setCountDistinct(new CountDistinct.SyncedHyperLogLog(10));
+		}
 	}
 	
 	public static void report(final ITool tool, final long startTime) {
@@ -437,6 +444,14 @@ public class CostModelCreator extends ExplorerVisitor {
     	// producing bogus results (see CostModelCreator.preVisit(ExploreNode) above).
     	final Action[] actions = tool.getActions();
         final Set<CostModel> reported = new HashSet<>();
+		// Let A be a sub-action with non-zero arity, i.e. a sub-action that has one or
+		// more parameters ("context"). TLC creates an action instance for each
+		// parameter in the set defining the set, if the set of parameter is
+		// constant-level. In other words, TLC may generate multiple Actions with the
+		// same location. Thus, sorting Action instances based on location
+		// non-deterministically eliminates the parameter dimension.  For coverage
+        // reporting, this is acceptable assuming that coverage data is uniform.
+        // However, this assumption doesn't hold if the model uses symmetry reduction.
         final Set<Action> sortedActions = new TreeSet<>(new Comparator<Action>() {
 			@Override
 			public int compare(Action o1, Action o2) {

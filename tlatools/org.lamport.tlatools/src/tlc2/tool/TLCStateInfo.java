@@ -5,11 +5,11 @@
 
 package tlc2.tool;
 
-import tlc2.cc.CC;
 import tlc2.cc.CCAction;
-import tlc2.cc.CCState;
-import tlc2.cc.TLCStateMutCC;
-import tlc2.value.IValue;
+
+import tlc2.value.impl.RecordValue;
+import tlc2.value.impl.RecordValue.PrintTLCState;
+import tlc2.value.impl.Value;
 
 // TLCStateInfo is largely obsolete and should be replaced in favor of
 // TLCStateMutExt, which has support for storing the predecessor, action,
@@ -24,11 +24,11 @@ public class TLCStateInfo {
 
   public static final String INITIAL_PREDICATE = "<" + INITIAL_PREDICATE_NO_ANGLE_BRACKET + ">";
   
-  public TLCStateInfo predecessorState;
   public long stateNumber;
   public Object info;
   public final TLCState state;
   public Long fp;
+  private Action action;
 
   public TLCStateInfo(final TLCState state) {
 	this.state = state;
@@ -47,6 +47,7 @@ public class TLCStateInfo {
 
   public TLCStateInfo(final TLCState state, final Action action) {
 	this.state = state;
+	this.action = action;
 	this.stateNumber = state.getLevel();
 	
 	this.info = toInfo(state.isInitial(), action);
@@ -85,6 +86,7 @@ public class TLCStateInfo {
 	  this.info = info.info;
 	  this.stateNumber = info.stateNumber;
 	  this.fp = info.fp;
+	  this.action = info.action;
   }
 
   public final long fingerPrint() {
@@ -120,7 +122,18 @@ public class TLCStateInfo {
   public Action getAction() {
 	  if (state.hasAction()) {
 		  return state.getAction();
+	  } else if (action != null) {
+		  return action;
 	  }
 	  return Action.UNKNOWN;
+  }
+
+  public Value toRecordValue() {
+      if (state instanceof PrintTLCState) {
+          final PrintTLCState p = (PrintTLCState) state;
+          return p.getRecord();
+      }
+
+      return new RecordValue(this);
   }
 }

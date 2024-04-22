@@ -1,5 +1,6 @@
 // Copyright (c) 2003 Compaq Corporation.  All rights reserved.
 // Portions Copyright (c) 2003 Microsoft Corporation.  All rights reserved.
+// Copyright (c) 2023, Oracle and/or its affiliates.
 // Last modified on Mon 30 Apr 2007 at 15:29:56 PST by lamport
 //      modified on Thu Jan 10 11:22:26 PST 2002 by yuanyu
 
@@ -8,6 +9,7 @@ package tlc2.tool;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -24,13 +26,13 @@ import java.util.stream.Collectors;
 
 import tla2sany.st.Location;
 import tlc2.TLCGlobals;
-import tlc2.cc.CCSimulationWorker;
 import tlc2.module.TLCGetSet;
 import tlc2.output.EC;
 import tlc2.output.MP;
 import tlc2.output.StatePrinter;
 import tlc2.tool.SimulationWorker.SimulationWorkerError;
 import tlc2.tool.SimulationWorker.SimulationWorkerResult;
+import tlc2.tool.SimulationWorker.SimulationWorkerStatistics;
 import tlc2.tool.coverage.CostModelCreator;
 import tlc2.tool.impl.FastTool;
 import tlc2.tool.impl.Tool;
@@ -60,6 +62,10 @@ import util.UniqueString;
 
 public class Simulator {
 
+	public static boolean EXTENDED_STATISTICS = Boolean
+			.getBoolean(Simulator.class.getName() + ".extendedStatistics");
+	public static boolean EXTENDED_STATISTICS_NAIVE = Boolean
+			.getBoolean(Simulator.class.getName() + ".extendedStatistics.naive");
 	public static boolean EXPERIMENTAL_LIVENESS_SIMULATION = Boolean
 			.getBoolean(Simulator.class.getName() + ".experimentalLiveness");
 	private final String traceActions;
@@ -105,10 +111,10 @@ public class Simulator {
 		// Initialization for liveness checking
 		if (this.checkLiveness) {
 			if (EXPERIMENTAL_LIVENESS_SIMULATION) {
-				final String tmpDir = System.getProperty("java.io.tmpdir");
-				liveCheck = new LiveCheck(this.tool.getLiveness(), tmpDir, new DummyBucketStatistics());
+				final String tmpDir = Files.createTempDirectory("tlc-simulator-").toString();
+				liveCheck = new LiveCheck(this.tool.noDebug(), tmpDir, new DummyBucketStatistics());
 			} else {
-				liveCheck = new LiveCheck1(this.tool.getLiveness());
+				liveCheck = new LiveCheck1(this.tool.noDebug());
 			}
 		} else {
 			liveCheck = new NoOpLiveCheck(tool, metadir);
@@ -137,7 +143,7 @@ public class Simulator {
 		// UniqueString#InternTable for every lookup. See AbstractChecker too.
 		this.config = createConfig();
 		
-		if (TLCGlobals.isCoverageEnabled()) {
+		if (TLCGlobals.isCoverageEnabled() || TLCGlobals.Coverage.isEnabled()) {
         	CostModelCreator.create(this.tool);
         }
 		
@@ -457,7 +463,7 @@ public class Simulator {
 				} else {
 					sinfo = new TLCStateInfo(curState);
 					StatePrinter.printInvariantViolationStateTraceState(tool.evalAlias(sinfo, sucState), lastState,
-							curState.getLevel());
+							curState.getLevel(), i + 1 == stateTrace.size());
 					lastState = curState;
 					continue;
 				}
@@ -482,7 +488,7 @@ public class Simulator {
 				} else {
 					// print the state's actual level and not a monotonically increasing state
 					// number => Numbering will have gaps with difftrace.
-					StatePrinter.printInvariantViolationStateTraceState(tool.evalAlias(sinfo, sucState), lastState, curState.getLevel());
+					StatePrinter.printInvariantViolationStateTraceState(tool.evalAlias(sinfo, sucState), lastState, curState.getLevel(), i + 1 == stateTrace.size());
 				}
 				lastState = curState;
 			}
@@ -658,7 +664,7 @@ public class Simulator {
 		long[][] aggregateActionStats = new long[len][len];
 		final List<SimulationWorker> workers = Simulator.this.workers;
 		for (SimulationWorker sw : workers) {
-			final long[][] s = sw.actionStats;
+			final long[][] s = sw.statistics.actionStats;
 			for (int i = 0; i < len; i++) {
 				for (int j = 0; j < len; j++) {
 					aggregateActionStats[i][j] += s[i][j];
@@ -705,7 +711,7 @@ public class Simulator {
 		long[][] aggregateActionStats = new long[len][len];
 		final List<SimulationWorker> workers = Simulator.this.workers;
 		for (SimulationWorker sw : workers) {
-			final long[][] s = sw.actionStats;
+			final long[][] s = sw.statistics.actionStats;
 			for (int i = 0; i < len; i++) {
 				for (int j = 0; j < len; j++) {
 					aggregateActionStats[i][j] += s[i][j];
@@ -822,34 +828,56 @@ public class Simulator {
 		return this.traceDepth;
 	}
 
-	public final Value getWorkerStatistics(TLCState s) {
+	public final SimulationWorkerStatistics getWorkerStatistics() {
 		if (Thread.currentThread() instanceof SimulationWorker) {
 			final SimulationWorker w = (SimulationWorker) Thread.currentThread();
-			return w.getWorkerStatistics(s);
+			return w.statistics;
 		} else {
-			return workers.get(0).getWorkerStatistics(s);
+			return workers.get(0).statistics;
 		}	
 	}
 	
 	public final Value getStatistics(final TLCState s) {
-		final UniqueString[] n = new UniqueString[5];
+		final UniqueString[] n = new UniqueString[11];
 		final Value[] v = new Value[n.length];
 		
+		final long genTrace = numOfGenTraces.longValue();
 		n[0] = TLCGetSet.TRACES;
-		v[0] = TLCGetSet.narrowToIntValue(numOfGenTraces.longValue());
+		v[0] = IntValue.narrowToIntValue(genTrace);
 		
 		n[1] = TLCGetSet.DURATION;
-		v[1] = TLCGetSet.narrowToIntValue((System.currentTimeMillis() - startTime) / 1000L);
+		v[1] = IntValue.narrowToIntValue((System.currentTimeMillis() - startTime) / 1000L);
 
 		n[2] = TLCGetSet.GENERATED;
-		v[2] = TLCGetSet.narrowToIntValue(numOfGenStates.longValue());
+		v[2] = IntValue.narrowToIntValue(numOfGenStates.longValue());
 
 		n[3] = TLCGetSet.BEHAVIOR;
-		v[3] = getWorkerStatistics(s);
+		v[3] = getWorkerStatistics().getTraceStatistics(s);
 
 		n[4] = TLCGetSet.WORKER;
 		v[4] = IntValue.gen(Thread.currentThread() instanceof IdThread ? IdThread.GetId() : 0);
+
+		n[5] = TLCGetSet.DISTINCT;
+		v[5] = getWorkerStatistics().getDistinctStates();
 		
+		n[6] = TLCGetSet.DISTINCT_VALUES;
+		v[6] = getWorkerStatistics().getDistinctValues();
+		
+		n[7] = TLCGetSet.RETRIES;
+		v[7] = getWorkerStatistics().getNextRetries();
+		
+		n[8] = TLCGetSet.SPEC_ACTIONS;
+		v[8] = getWorkerStatistics().getActions();
+		
+		final long m2AndMean = welfordM2AndMean.get();
+		final long mean = m2AndMean & 0x00000000FFFFFFFFL; // could be int.
+		n[9] = TLCGetSet.LEVEL_MEAN;
+		v[9] = IntValue.narrowToIntValue(mean);
+
+		final long m2 = m2AndMean >>> 32;
+		n[10] = TLCGetSet.LEVEL_VARIANCE;
+		v[10] = IntValue.narrowToIntValue(Math.round(m2 / (genTrace + 1d)));// Var(X),  +1 to prevent div-by-zero.
+
 		return new RecordValue(n, v, false);
 	}
 

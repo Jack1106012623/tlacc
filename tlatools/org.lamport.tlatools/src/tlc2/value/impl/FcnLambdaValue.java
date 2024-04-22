@@ -29,7 +29,7 @@ import tlc2.value.Values;
 import util.Assert;
 import util.UniqueString;
 
-public class FcnLambdaValue extends Value implements Applicable, IFcnLambdaValue {
+public class FcnLambdaValue extends Value implements FunctionValue, IFcnLambdaValue {
   public final FcnParams params;       // the function formals
   public final SemanticNode body;      // the function body
   public ValueExcept[] excepts;  // the EXCEPTs
@@ -268,18 +268,6 @@ public class FcnLambdaValue extends Value implements Applicable, IFcnLambdaValue
     }
   }
 
-  /* This one does not seem to be needed anymore.  */
-  @Override
-  public final Value apply(Value[] args, int control) throws EvalException {
-    try {
-      return this.apply(new TupleValue(args), control);
-    }
-    catch (RuntimeException | OutOfMemoryError e) {
-      if (hasSource()) { throw FingerprintException.getNewHead(this, e); }
-      else { throw e; }
-    }
-  }
-
   @Override
   public final Value select(Value arg) {
     try {
@@ -372,7 +360,7 @@ public class FcnLambdaValue extends Value implements Applicable, IFcnLambdaValue
             }
           }
         }
-        res = (Value) this.tool.eval(this.body, c1, this.state, this.pstate, this.control);
+        res = (Value) this.tool.eval(this.body, c1, this.state, this.pstate, this.control, this.cm);
       }
 
       // Finally, apply the matching excepts on the result.

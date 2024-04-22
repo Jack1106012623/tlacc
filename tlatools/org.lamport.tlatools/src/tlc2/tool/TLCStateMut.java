@@ -1,5 +1,6 @@
 // Copyright (c) 2003 Compaq Corporation.  All rights reserved.
 // Portions Copyright (c) 2003 Microsoft Corporation.  All rights reserved.
+// Copyright (c) 2023, Oracle and/or its affiliates.
 // Last modified on Mon 30 Apr 2007 at 15:30:01 PST by lamport
 //      modified on Wed Dec  5 23:18:37 PST 2001 by yuanyu
 
@@ -7,9 +8,11 @@ package tlc2.tool;
 
 import java.io.IOException;
 import java.io.Serializable;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.stream.Collectors;
 
 import tla2sany.semantic.OpDeclNode;
 import tla2sany.semantic.SemanticNode;
@@ -33,7 +36,7 @@ import util.WrongInvocationException;
  *
  * The viewMap was added by Rajeev Joshi.
  */
-public final class TLCStateMut extends TLCState implements Cloneable, Serializable {
+public final class TLCStateMut extends TLCState implements Serializable {
   private IValue values[];
   private static ITool mytool = null;
 
@@ -127,9 +130,7 @@ public final class TLCStateMut extends TLCState implements Cloneable, Serializab
   public final TLCState copy() {
     int len = this.values.length;
     IValue[] vals = new IValue[len];
-    for (int i = 0; i < len; i++) {
-      vals[i] = this.values[i];
-    }
+    System.arraycopy(this.values, 0, vals, 0, len);
     return copy(new TLCStateMut(vals));
   }
 
@@ -355,12 +356,19 @@ public final class TLCStateMut extends TLCState implements Cloneable, Serializab
   
   /* Returns a string representation of this state.  */
   public final String toString(TLCState lastState) {
+		return toString(
+				Arrays.stream(vars).map(o -> o.getName()).collect(Collectors.toList()).toArray(UniqueString[]::new),
+				lastState);
+  }
+  
+  /* Returns a string representation of this state.  */
+  public final String toString(UniqueString[] vars, TLCState lastState) {
     StringBuffer result = new StringBuffer();
-    TLCStateMut lstate = (TLCStateMut)lastState;
+    TLCState lstate = lastState;
 
     int vlen = vars.length;
     if (vlen == 1) {
-      UniqueString key = vars[0].getName();
+      UniqueString key = vars[0];
       IValue val = this.lookup(key);
       IValue lstateVal = lstate.lookup(key);
       if (!lstateVal.equals(val)) {
@@ -370,7 +378,7 @@ public final class TLCStateMut extends TLCState implements Cloneable, Serializab
     }
     else {
       for (int i = 0; i < vlen; i++) {
-	UniqueString key = vars[i].getName();
+	UniqueString key = vars[i];
 	IValue val = this.lookup(key);
 	IValue lstateVal = lstate.lookup(key);
 	if (!lstateVal.equals(val)) {

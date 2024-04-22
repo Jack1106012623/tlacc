@@ -35,6 +35,8 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
+import tla2sany.semantic.SemanticNode;
+import tlc2.TLCGlobals;
 import tlc2.tool.Action;
 import tlc2.tool.TLCState;
 import util.FileUtil;
@@ -62,6 +64,9 @@ public class DotStateWriter extends StateWriter {
 	
 	// A mapping from ranks to nodes.
 	private final Map<Integer, Set<Long>> rankToNodes = new HashMap<>();
+	
+	// Forbids the creation of multi-edges.
+	private final Set<Long> strict;
 
 	// Determines whether or not transition edges should be colorized in the state
 	// graph.
@@ -78,11 +83,18 @@ public class DotStateWriter extends StateWriter {
 	// Create a valid fname_snapshot.dot file after a state is written.
 	private final boolean snapshot;
 	
+	// Include states in the dot file that are excluded from the model via a state or action constraint.
+	private final boolean constrained;
+	
 	// Determines whether or not stuttering edges should be rendered.
 	private final boolean stuttering;
 	
+	public DotStateWriter() throws IOException {
+		this("DotStateWriter.dot", "", false, false, false, false, false, false);
+	}
+	
 	public DotStateWriter(final String fname, final String strict) throws IOException {
-		this(fname, strict, false, false, false, false);
+		this(fname, strict, false, false, false, false, false, false);
 	}
 	
 	/**
@@ -96,18 +108,24 @@ public class DotStateWriter extends StateWriter {
 	 * @throws IOException
 	 */
 	public DotStateWriter(final String fname, final boolean colorize, final boolean actionLabels,
-			final boolean snapshot, final boolean stuttering) throws IOException {
-		this(fname, "strict ", colorize, actionLabels, snapshot, stuttering);
+			final boolean snapshot, final boolean constrained, final boolean stuttering, final boolean strict) throws IOException {
+		this(fname, "strict ", colorize, actionLabels, snapshot, constrained, stuttering, strict);
 	}
 	
-	public DotStateWriter(final String fname, final String strict, final boolean colorize, final boolean actionLabels,
-			final boolean snapshot, final boolean stuttering) throws IOException {
+	public DotStateWriter(final String fname, final String prefix, final boolean colorize, final boolean actionLabels,
+			final boolean snapshot, final boolean constrained, final boolean stuttering, final boolean strict) throws IOException {
 		super(fname);
 		this.colorize = colorize;
 		this.actionLabels = actionLabels;
 		this.snapshot = snapshot;
+		this.constrained = constrained;
 		this.stuttering = stuttering;
-		this.writer.append(strict + "digraph DiskGraph {\n"); // strict removes redundant edges
+		if (strict) {
+			this.strict = new HashSet<>();
+		} else {
+			this.strict = null;
+		}
+		this.writer.append(prefix + "digraph DiskGraph {\n"); // strict removes redundant edges
 		// Turned off LR because top to bottom provides better results with GraphViz viewer.
 //		this.writer.append("rankdir=LR;\n"); // Left to right rather than top to bottom
 		
@@ -135,6 +153,10 @@ public class DotStateWriter extends StateWriter {
 	@Override
 	public boolean isDot() {
 		return true;
+	}
+	
+	public boolean isConstrained() {
+		return this.constrained;
 	}
 
 	/* (non-Javadoc)
@@ -168,42 +190,60 @@ public class DotStateWriter extends StateWriter {
 	/* (non-Javadoc)
 	 * @see tlc2.util.StateWriter#writeState(tlc2.tool.TLCState, tlc2.tool.TLCState, boolean)
 	 */
-	public void writeState(TLCState state, TLCState successor, boolean successorStateIsNew) {
-		writeState(state, successor, successorStateIsNew, Visualization.DEFAULT);
+	public void writeState(TLCState state, TLCState successor, short stateFlags) {
+		writeState(state, successor, stateFlags, Visualization.DEFAULT);
 	}
 	
-    public void writeState(final TLCState state, final TLCState successor, final boolean successorStateIsNew, Action action)
+    public void writeState(final TLCState state, final TLCState successor, final short stateFlags, Action action)
     {
-		writeState(state, successor, null, 0, 0, successorStateIsNew, Visualization.DEFAULT, action);
+		writeState(state, successor, null, 0, 0, stateFlags, Visualization.DEFAULT, action, null);
+    }
+	
+    public void writeState(final TLCState state, final TLCState successor, final short stateFlags, Action action, SemanticNode pred)
+    {
+		writeState(state, successor, null, 0, 0, stateFlags, Visualization.DEFAULT, action, pred);
     }
 	
 	/* (non-Javadoc)
 	 * @see tlc2.util.StateWriter#writeState(tlc2.tool.TLCState, tlc2.tool.TLCState, boolean, tlc2.util.IStateWriter.Visualization)
 	 */
-	public void writeState(TLCState state, TLCState successor, boolean successorStateIsNew, Visualization visualization) {
-		writeState(state, successor, null, 0, 0, successorStateIsNew, visualization, null);
+	public void writeState(TLCState state, TLCState successor, short stateFlags, Visualization visualization) {
+		writeState(state, successor, null, 0, 0, stateFlags, visualization, null, null);
 	}
 
 	/* (non-Javadoc)
 	 * @see tlc2.util.StateWriter#writeState(tlc2.tool.TLCState, tlc2.tool.TLCState, tlc2.util.BitVector, int, int, boolean)
 	 */
-	public void writeState(TLCState state, TLCState successor, BitVector actionChecks, int from, int length, boolean successorStateIsNew) {
-		writeState(state, successor, actionChecks, from, length, successorStateIsNew, Visualization.DEFAULT, null);
+	public void writeState(TLCState state, TLCState successor, BitVector actionChecks, int from, int length, short stateFlags) {
+		writeState(state, successor, actionChecks, from, length, stateFlags, Visualization.DEFAULT, null, null);
 	}
 
 	/* (non-Javadoc)
 	 * @see tlc2.util.StateWriter#writeState(tlc2.tool.TLCState, tlc2.tool.TLCState, java.lang.String, boolean, tlc2.util.IStateWriter.Visualization)
 	 */
-	private synchronized void writeState(TLCState state, TLCState successor, BitVector actionChecks, int from, int length, boolean successorStateIsNew,
-			Visualization visualization, Action action) {
+	private synchronized void writeState(TLCState state, TLCState successor, BitVector actionChecks, int from, int length, short stateFlags,
+			Visualization visualization, Action action, SemanticNode pred) {
 		if (!stuttering && visualization == Visualization.STUTTERING) {
 			// Do not render stuttering transitions unless requested.
 			return;
 		}
-		final String successorsFP = Long.toString(successor.fingerPrint());
+		
+		final long sfp = successor.fingerPrint();
+		final long cfp = state.fingerPrint();
+
+		if (strict != null) {
+			// XORing the fingerprints of the two nodes may result in the omission of this
+			// edge. However, this is expected to be a minor issue, as the DotStateWriter
+			// primarily handles small graphs for visualization with GraphViz.
+			if (!strict.add(cfp ^ sfp)) {
+				return;
+			}
+		}
+		
+		final String successorsFP = Long.toString(sfp);
 		
 		// Write the transition edge.
-		this.writer.append(Long.toString(state.fingerPrint()));
+		this.writer.append(Long.toString(cfp));
 		this.writer.append(" -> ");
 		this.writer.append(successorsFP);
 		if (visualization == Visualization.STUTTERING) {
@@ -211,7 +251,7 @@ public class DotStateWriter extends StateWriter {
 		} else {
 			// Add the transition edge label.
 			if(action!=null) {
-				String transitionLabel = this.dotTransitionLabel(state, successor, action);
+				String transitionLabel = this.dotTransitionLabel(state, successor, action, pred);
 				this.writer.append(transitionLabel);	
 			}
 			
@@ -221,12 +261,22 @@ public class DotStateWriter extends StateWriter {
 			// when writeState sees the successor. It does not print the label for
 			// the current state. If it would print the label for the current state,
 			// the init state labels would be printed twice.
-			if (successorStateIsNew) {
+	    	if (!isSet(stateFlags, IStateWriter.IsSeen)) {
 				// Write the successor's label.
 				this.writer.append(successorsFP);
 				this.writer.append(" [label=\"");
-				this.writer.append(states2dot(successor.evalStateLevelAlias()));
-				this.writer.append("\"]");
+				if (TLCGlobals.printDiffsOnly) {
+					this.writer.append(states2dot(state.evalStateLevelAlias(), successor.evalStateLevelAlias()));
+				} else {
+					this.writer.append(states2dot(successor.evalStateLevelAlias()));
+				}
+				this.writer.append("\",tooltip=\"");
+				this.writer.append(states2dot(successor));
+		    	if (isSet(stateFlags, IStateWriter.IsNotInModel)) {
+		    		this.writer.append("\",style = filled, fillcolor=lightyellow]");
+				} else {
+					this.writer.append("\"]");
+				}
 				this.writer.append(";\n");
 			}
 		}
@@ -281,15 +331,15 @@ public class DotStateWriter extends StateWriter {
 	 * @param action the action that induced the transition
 	 * @return the DOT label for the edge
 	 */
-	protected String dotTransitionLabel(final TLCState state, final TLCState successor, final Action action) {
+	protected String dotTransitionLabel(final TLCState state, final TLCState successor, final Action action, final SemanticNode pred) {
 	    // Only colorize edges if specified. Default to black otherwise.
 		final String color = colorize ? this.getActionColor(action).toString() : "black" ;
 		
 	    // Only add action label if specified.
 		final String actionName = actionLabels ? action.getName().toString() : "" ;
 		
-		final String labelFmtStr = " [label=\"%s\",color=\"%s\",fontcolor=\"%s\"]";
-		return String.format(labelFmtStr, actionName, color, color);
+		final String labelFmtStr = " [label=\"%s%s\",color=\"%s\",fontcolor=\"%s\"]";
+		return String.format(labelFmtStr, actionName, pred == null ? "" : "\n" + pred.toString(), color, color);
 	}
 	
 	
@@ -334,6 +384,12 @@ public class DotStateWriter extends StateWriter {
 //		}
 //		return sb.toString();
 //	}
+
+	protected static String states2dot(final TLCState predecessor, final TLCState state) {
+		// Replace "\" with "\\" and """ with "\"".	
+		return state.toString(predecessor).replace("\\", "\\\\").replace("\"", "\\\"").trim()
+				.replace("\n", "\\n"); // Do not remove remaining (i.e. no danling/leading) "\n". 
+	}
 
 	protected static String states2dot(final TLCState state) {
 		// Replace "\" with "\\" and """ with "\"".	

@@ -31,7 +31,12 @@ import java.io.File;
 import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.nio.charset.Charset;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -42,21 +47,27 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.google.gson.JsonPrimitive;
 
+import tla2sany.semantic.ExprOrOpArgNode;
+import tlc2.output.EC;
+import tlc2.overrides.Evaluation;
 import tlc2.overrides.TLAPlusOperator;
+import tlc2.tool.EvalControl;
+import tlc2.tool.EvalException;
+import tlc2.tool.TLCState;
+import tlc2.tool.coverage.CostModel;
+import tlc2.tool.impl.Tool;
+import tlc2.util.Context;
 import tlc2.value.IValue;
+import tlc2.value.Values;
 import tlc2.value.impl.BoolValue;
+import tlc2.value.impl.EnumerableValue;
 import tlc2.value.impl.FcnLambdaValue;
 import tlc2.value.impl.FcnRcdValue;
 import tlc2.value.impl.IntValue;
-import tlc2.value.impl.IntervalValue;
 import tlc2.value.impl.ModelValue;
 import tlc2.value.impl.RecordValue;
 import tlc2.value.impl.SetEnumValue;
-import tlc2.value.impl.SetOfFcnsValue;
-import tlc2.value.impl.SetOfRcdsValue;
-import tlc2.value.impl.SetOfTuplesValue;
 import tlc2.value.impl.StringValue;
-import tlc2.value.impl.SubsetValue;
 import tlc2.value.impl.TupleValue;
 import tlc2.value.impl.Value;
 import util.UniqueString;
@@ -147,8 +158,12 @@ public class Json {
    */
   @TLAPlusOperator(identifier = "ndJsonSerialize", module = "Json", warn = false)
   public synchronized static BoolValue ndSerialize(final StringValue path, final Value v) throws IOException {
-	TupleValue value = (TupleValue) v.toTuple();
-    File file = new File(path.val.toString());
+	final TupleValue value = (TupleValue) v.toTuple();
+	if (value == null) {
+		throw new EvalException(EC.TLC_MODULE_ARGUMENT_ERROR,
+				new String[] { "second", "ndJsonSerialize", "sequence", Values.ppr(v.toString()) });
+	}
+    final File file = new File(path.val.toString());
     if (file.getParentFile() != null) {file.getParentFile().mkdirs();} // Cannot create parent dir for relative path.
     try (BufferedWriter writer = new BufferedWriter(new FileWriter(new File(path.val.toString())))) {
         for (int i = 0; i < value.elems.length; i++) {
@@ -157,9 +172,64 @@ public class Json {
     }
     return BoolValue.ValTrue;
   }
+  
+	@Evaluation(definition = "Serialize", module = "IOUtils", warn = false, silent = true, priority = 25)
+	public synchronized static Value textSerialize(final Tool tool, final ExprOrOpArgNode[] args, final Context c,
+			final TLCState s0, final TLCState s1, final int control, final CostModel cm) {
+
+		// Options
+		final Value third = tool.eval(args[2], c, s0, s1, control, cm);
+		final RecordValue opts = (RecordValue) third.toRcd();
+		if (opts == null) {
+			throw new EvalException(EC.TLC_MODULE_ARGUMENT_ERROR,
+					new String[] { "third", "ndJsonSerialize", "sequence", Values.ppr(third.toString()) });
+		}
+
+		final StringValue serializer = (StringValue) opts.apply(new StringValue("format"), EvalControl.Clear);
+		if ("NDJSON".equals(serializer.getVal().toString())) {
+
+			// Json payload
+			final Value first = tool.eval(args[0], c, s0, s1, control, cm);
+			final TupleValue payload = (TupleValue) first.toTuple();
+			if (payload == null) {
+				throw new EvalException(EC.TLC_MODULE_ARGUMENT_ERROR,
+						new String[] { "first", "Serialize", "sequence", Values.ppr(first.toString()) });
+			}
+			
+			// Filename
+			final Value second = tool.eval(args[1], c, s0, s1, control, cm);
+			if (!(second instanceof StringValue)) {
+				throw new EvalException(EC.TLC_MODULE_ARGUMENT_ERROR,
+						new String[] { "second", "ndJsonSerialize", "sequence", Values.ppr(second.toString()) });
+			}
+			final StringValue filepath = (StringValue) second;
+
+			// Options
+			final TupleValue openOptionstv = (TupleValue) opts.apply(new StringValue("openOptions"), EvalControl.Clear);
+			final StringValue charset = (StringValue) opts.apply(new StringValue("charset"), EvalControl.Clear);
+			final StringValue[] openOptions = Arrays.asList(openOptionstv.getElems()).stream().map(e -> (StringValue) e)
+					.toArray(size -> new StringValue[size]);
+
+			try (BufferedWriter writer = Files.newBufferedWriter(Paths.get(filepath.getVal().toString()),
+					Charset.forName(charset.getVal().toString()),
+					Arrays.asList(openOptions).stream().map(e -> StandardOpenOption.valueOf(e.getVal().toString()))
+							.toArray(size -> new StandardOpenOption[size]))) {
+				
+				for (int i = 0; i < payload.elems.length; i++) {
+					writer.write(getNode(payload.elems[i]).toString() + "\n");
+				}
+
+				return BoolValue.ValTrue;
+			} catch (Exception e) {
+				throw new RuntimeException(e);
+			}
+
+		}
+		return null;
+	}
 
   /**
-   * Serializes a tuple of values to newline delimited JSON.
+   * Serializes a TLA+ TupleValue or RecordValue to JSON.
    *
    * @param path  the file to which to write the values
    * @param value the values to write
@@ -167,19 +237,19 @@ public class Json {
    */
   @TLAPlusOperator(identifier = "JsonSerialize", module = "Json", warn = false)
   public synchronized static BoolValue serialize(final StringValue path, final Value v) throws IOException {
-	TupleValue value = (TupleValue) v.toTuple();
-    File file = new File(path.val.toString());
+	Value value = v.toTuple();
+	if (value == null) {
+		value = v.toRcd();
+	}
+	if (value == null) {
+		throw new EvalException(EC.TLC_MODULE_ARGUMENT_ERROR,
+				new String[] { "second", "JsonSerialize", "sequence or record", Values.ppr(v.toString()) });
+	}
+		
+    final File file = new File(path.val.toString());
     if (file.getParentFile() != null) {file.getParentFile().mkdirs();} // Cannot create parent dir for relative path.
     try (BufferedWriter writer = new BufferedWriter(new FileWriter(new File(path.val.toString())))) {
-    	writer.write("[\n");
-		for (int i = 0; i < value.elems.length; i++) {
-			writer.write(getNode(value.elems[i]).toString());
-			if (i < value.elems.length - 1) {
-				// No dangling "," after last element.
-				writer.write(",\n");
-			}
-		}
-    	writer.write("\n]\n");
+    	writer.write(getNode(v).toString());
     }
     return BoolValue.ValTrue;
   }
@@ -209,16 +279,8 @@ public class Json {
       return getObjectNode((FcnRcdValue) ((FcnLambdaValue) value).toFcnRcd());
     } else if (value instanceof SetEnumValue) {
       return getArrayNode((SetEnumValue) value);
-    } else if (value instanceof SetOfRcdsValue) {
-      return getArrayNode((SetEnumValue) ((SetOfRcdsValue) value).toSetEnum());
-    } else if (value instanceof SetOfTuplesValue) {
-      return getArrayNode((SetEnumValue) ((SetOfTuplesValue) value).toSetEnum());
-    } else if (value instanceof SetOfFcnsValue) {
-      return getArrayNode((SetEnumValue) ((SetOfFcnsValue) value).toSetEnum());
-    } else if (value instanceof SubsetValue) {
-      return getArrayNode((SetEnumValue) ((SubsetValue) value).toSetEnum());
-    } else if (value instanceof IntervalValue) {
-      return getArrayNode((SetEnumValue) ((IntervalValue) value).toSetEnum());
+    } else if (value instanceof EnumerableValue) {
+      return getArrayNode((SetEnumValue) ((EnumerableValue) value).toSetEnum());
     } else {
       throw new IOException("Cannot convert value: unsupported value type " + value.getClass().getName());
     }
@@ -333,16 +395,8 @@ public class Json {
       return getArrayNode((FcnRcdValue) ((FcnLambdaValue) value).toFcnRcd());
     } else if (value instanceof SetEnumValue) {
       return getArrayNode((SetEnumValue) value);
-    } else if (value instanceof SetOfRcdsValue) {
-      return getArrayNode((SetEnumValue) ((SetOfRcdsValue) value).toSetEnum());
-    } else if (value instanceof SetOfTuplesValue) {
-      return getArrayNode((SetEnumValue) ((SetOfTuplesValue) value).toSetEnum());
-    } else if (value instanceof SetOfFcnsValue) {
-      return getArrayNode((SetEnumValue) ((SetOfFcnsValue) value).toSetEnum());
-    } else if (value instanceof SubsetValue) {
-      return getArrayNode((SetEnumValue) ((SubsetValue) value).toSetEnum());
-    } else if (value instanceof IntervalValue) {
-      return getArrayNode((SetEnumValue) ((IntervalValue) value).toSetEnum());
+    } else if (value instanceof EnumerableValue) {
+        return getArrayNode((SetEnumValue) ((EnumerableValue) value).toSetEnum());
     } else {
       throw new IOException("Cannot convert value: unsupported value type " + value.getClass().getName());
     }
@@ -421,9 +475,6 @@ public class Json {
       else if (primitive.isString()) {
         return new StringValue(primitive.getAsString());
       }
-    }
-    else if (node.isJsonNull()) {
-      return null;
     }
     throw new IOException("Cannot convert value: unsupported JSON value " + node.toString());
   }

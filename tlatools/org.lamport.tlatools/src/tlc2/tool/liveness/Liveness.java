@@ -33,8 +33,6 @@ import tlc2.util.Vect;
 import tlc2.value.IBoolValue;
 import tlc2.value.IFcnLambdaValue;
 import tlc2.value.IValue;
-import tlc2.value.impl.EvaluatingValue;
-import tlc2.value.impl.MethodValue;
 import util.Assert;
 import util.ToolIO;
 
@@ -105,15 +103,8 @@ public class Liveness implements ToolGlobals, ASTConstants {
 		 * incurred at startup (during the construction of the liveness tableau).
 		 * Additionally, it only checks the level for MethodValues and EvaluatingValues.
 		 */
-		if (level == LevelConstants.ConstantLevel && expr instanceof OpApplNode) {
-			final Object realDef = tool.lookup(((OpApplNode) expr).getOperator(), Context.Empty, false);
-			if (realDef instanceof MethodValue || realDef instanceof EvaluatingValue) {
-				// The current level is determined by the maximum level of the arguments in the
-				// operator's application.
-				for (SymbolNode p : expr.getAllParams()) {
-					level = Math.max(level, p.getLevel());
-				}
-			}
+		if (level == LevelConstants.ConstantLevel) {
+			level = tool.getLevelBound(expr, con, tool.getId());
 		}
 
 		if (level == LevelConstants.ConstantLevel) {
@@ -235,6 +226,10 @@ public class Liveness implements ToolGlobals, ASTConstants {
 					LiveExprNode kid = astToLive(tool, body, con1);
 					res.addDisj(kid);
 				}
+				if (res.getCount() == 0) {
+					// This is a contradiction because the context (Enum) was the empty set.
+					return LNBool.FALSE;
+				}
 				int level = res.getLevel();
 				if (level > LevelConstants.ActionLevel) {
 					return res;
@@ -261,6 +256,10 @@ public class Liveness implements ToolGlobals, ASTConstants {
 				while ((con1 = Enum.nextElement()) != null) {
 					LiveExprNode kid = astToLive(tool, body, con1);
 					res.addConj(kid);
+				}
+				if (res.getCount() == 0) {
+					// This is a tautology because the context (Enum) was the empty set.
+					return LNBool.TRUE;
 				}
 				int level = res.getLevel();
 				if (level > LevelConstants.ActionLevel) {

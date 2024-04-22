@@ -26,6 +26,7 @@
 package tlc2.tool.impl;
 
 import java.io.File;
+import java.io.PrintStream;
 import java.io.Serializable;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
@@ -69,6 +70,7 @@ import tlc2.TLCGlobals;
 import tlc2.cc.TLCStateMutCC;
 import tlc2.module.BuiltInModuleHelper;
 import tlc2.module.TLCBuiltInOverrides;
+import tlc2.output.DelayedPrintStream;
 import tlc2.output.EC;
 import tlc2.output.MP;
 import tlc2.overrides.Evaluation;
@@ -123,35 +125,37 @@ public class SpecProcessor implements ValueConstants, ToolGlobals {
 	private SpecObj specObj;
 	private Defns snapshot;
 
-	private Vect<Action> initPredVec; // The initial state predicate.
-	private Action nextPred; // The next state predicate.
-	private Action[] temporals; // Fairness specifications...
-	private String[] temporalNames; // ... and their names
-	private Action[] impliedTemporals; // Liveness conds to check...
-	private String[] impliedTemporalNames; // ... and their names
-	private Action[] invariants; // Invariants to be checked...
-	private String[] invNames; // ... and their names
-	private Action[] impliedInits; // Implied-inits to be checked...
-	private String[] impliedInitNames; // ... and their names
-	private Action[] impliedActions; // Implied-actions to be checked...
-	private String[] impliedActNames; // ... and their names
-	private ExprNode[] modelConstraints; // Model constraints
-	private ExprNode[] actionConstraints; // Action constraints
-	private ExprNode[] assumptions; // Assumpt ions
-	private boolean[] assumptionIsAxiom; // assumptionIsAxiom[i] is true iff assumptions[i]
-																				// is an AXIOM. Added 26 May 2010 by LL
-
-	private Vect<Action> invVec = new Vect<>();
-	private Vect<String> invNameVec = new Vect<>();
-	private Vect<Action> impliedInitVec = new Vect<>();
-	private Vect<String> impliedInitNameVec = new Vect<>();
-	private Vect<Action> impliedActionVec = new Vect<>();
-	private Vect<String> impliedActNameVec = new Vect<>();
-	private Vect<Action> temporalVec = new Vect<>();
-	private Vect<String> temporalNameVec = new Vect<>();
-	private Vect<Action> impliedTemporalVec = new Vect<>();
-	private Vect<String> impliedTemporalNameVec = new Vect<>();
-
+    private Vect<Action> initPredVec; // The initial state predicate.
+    private Action nextPred; // The next state predicate.
+    private Action[] temporals; // Fairness specifications...
+    private String[] temporalNames; // ... and their names
+    private Action[] impliedTemporals; // Liveness conds to check...
+    private String[] impliedTemporalNames; // ... and their names
+    private Action[] invariants; // Invariants to be checked...
+    private String[] invNames; // ... and their names
+    private Action[] impliedInits; // Implied-inits to be checked...
+    private String[] impliedInitNames; // ... and their names
+    private Action[] impliedActions; // Implied-actions to be checked...
+    private String[] impliedActNames; // ... and their names
+    private ExprNode[] modelConstraints; // Model constraints
+    private ExprNode[] actionConstraints; // Action constraints
+    private ExprNode rlReward;
+    private ExprNode periodic;
+    private ExprNode[] assumptions; // Assumpt	ions
+    private boolean[] assumptionIsAxiom; // assumptionIsAxiom[i] is true iff assumptions[i]
+                                           // is an AXIOM.  Added 26 May 2010 by LL
+    
+    private Vect<Action> invVec = new Vect<>();
+    private Vect<String> invNameVec = new Vect<>();
+    private Vect<Action> impliedInitVec = new Vect<>();
+    private Vect<String> impliedInitNameVec = new Vect<>();
+    private Vect<Action> impliedActionVec = new Vect<>();
+    private Vect<String> impliedActNameVec = new Vect<>();
+    private Vect<Action> temporalVec = new Vect<>();
+    private Vect<String> temporalNameVec = new Vect<>();
+    private Vect<Action> impliedTemporalVec = new Vect<>();
+    private Vect<String> impliedTemporalNameVec = new Vect<>();
+    
 	public SpecProcessor(final String rootFile, final FilenameToStream resolver, final int toolId, final Defns defns,
 			final ModelConfig config, final SymbolNodeValueLookupProvider snvlp, final OpDefEvaluator ode,
 			final TLAClass tlaClass, Mode mode, SpecObj obj) {
@@ -183,24 +187,24 @@ public class SpecProcessor implements ValueConstants, ToolGlobals {
 		processConfig();
 	}
 
-	/**
-	 * This method converts every definition that is constant into TLC value. By
-	 * doing this, TLC avoids evaluating the same expression multiple times.
-	 *
-	 * The method runs for every module in the module tables.
-	 *
-	 * Modified by LL on 23 July 2013 so it is not run for modules that are
-	 * instantiated and have parameters (CONSTANT or VARIABLE declarations)
-	 */
-	private void processConstantDefns() {
-		ModuleNode[] mods = this.moduleTbl.getModuleNodes();
-		for (int i = 0; i < mods.length; i++) {
-			if ((!mods[i].isInstantiated())
-					|| ((mods[i].getConstantDecls().length == 0) && (mods[i].getVariableDecls().length == 0))) {
-				this.processConstantDefns(mods[i]);
-			}
-		}
-	}
+    /**
+     * This method converts every definition that is constant into TLC
+     * value. By doing this, TLC avoids evaluating the same expression
+     * multiple times.
+     *
+     * The method runs for every module in the module tables.
+     *
+     * Modified by LL on 23 July 2013 so it is not run for modules that are
+     * instantiated and have parameters (CONSTANT or VARIABLE declarations)
+     */
+    private void processConstantDefns() {
+        ModuleNode[] mods = this.moduleTbl.getModuleNodes();
+        for (int i = 0; i < mods.length; i++) {
+			if (mods[i].processConstantDefns()) {
+	              this.processConstantDefns(mods[i]);
+          }
+        }
+    }
 
 	private final Map<ModuleNode, Map<OpDefOrDeclNode, Object>> constantDefns = new HashMap<>();
 
@@ -302,12 +306,11 @@ public class SpecProcessor implements ValueConstants, ToolGlobals {
 		DEFS: for (int i = 0; i < opDefs.length; i++) {
 			OpDefNode opDef = opDefs[i];
 
-			// The following variable evaluate and its value added by LL on 24 July 2013
-			// to prevent pre-evaluation of a definition from an EXTENDS of a module that
-			// is also instantiated.
-			ModuleNode moduleNode = opDef.getOriginallyDefinedInModuleNode();
-			boolean evaluate = (moduleNode == null) || (!moduleNode.isInstantiated())
-					|| ((moduleNode.getConstantDecls().length == 0) && (moduleNode.getVariableDecls().length == 0));
+        // The following variable evaluate and its value added by LL on 24 July 2013
+        // to prevent pre-evaluation of a definition from an EXTENDS of a module that
+        // is also instantiated.
+        ModuleNode moduleNode = opDef.getOriginallyDefinedInModuleNode() ;
+		boolean evaluate = moduleNode == null || moduleNode.processConstantDefns();
 
 			if (evaluate && opDef.getArity() == 0) {
 				Object realDef = symbolNodeValueLookupProvider.lookup(opDef, Context.Empty, false, toolId);
@@ -370,22 +373,30 @@ public class SpecProcessor implements ValueConstants, ToolGlobals {
 	// SZ Feb 20, 2009: added support for existing specObj
 	private final void processSpec(final Mode mode) {
 
-		// We first call the SANY front-end to parse and semantic-analyze
-		// the complete TLA+ spec starting with the main module rootFile.
-		if (TLCGlobals.tool) {
-			MP.printMessage(EC.TLC_SANY_START);
-		}
-		try {
-			// SZ Feb 20, 2009:
-			// call SANY to parse the module
-			// this method will not throw any exceptions on
-			// checked errors (init, parse, semantic).
-			// Only if something unexpected happens the
-			// exception is thrown
-			SANY.frontEndMain(specObj, this.rootFile, ToolIO.out);
-		} catch (FrontEndException e) {
-			Assert.fail(EC.TLC_PARSING_FAILED2, e);
-		}
+        // We first call the SANY front-end to parse and semantic-analyze
+        // the complete TLA+ spec starting with the main module rootFile.
+        if (TLCGlobals.tool)
+        {
+            MP.printMessage(EC.TLC_SANY_START);
+        }
+		final PrintStream ps = MP.isSuppressed(EC.TLC_SANY_START) ? new DelayedPrintStream(ToolIO.out) : ToolIO.out;
+        try
+        {
+            // SZ Feb 20, 2009:
+            // call SANY to parse the module
+            // this method will not throw any exceptions on
+            // checked errors (init, parse, semantic).
+            // Only if something unexpected happens the
+            // exception is thrown
+			SANY.frontEndMain(specObj, this.rootFile, ps);
+        } catch (FrontEndException e)
+        {
+        	if (ps instanceof DelayedPrintStream) {
+        		DelayedPrintStream dps = (DelayedPrintStream) ps;
+        		dps.release();
+        	}
+            Assert.fail(EC.TLC_PARSING_FAILED2, e);
+        }
 
 		if (TLCGlobals.tool) {
 			MP.printMessage(EC.TLC_SANY_END);
@@ -800,26 +811,33 @@ public class SpecProcessor implements ValueConstants, ToolGlobals {
 			}
 		}
 
-		// Apply config file overrides to operator definitions:
-		for (int i = 0; i < rootOpDefs.length; i++) {
-			UniqueString lhs = rootOpDefs[i].getName();
-			String rhs = (String) overrides.get(lhs.toString());
-			if (rhs != null) {
-				if (overrides.containsKey(rhs)) {
-					Assert.fail(EC.TLC_CONFIG_RHS_ID_APPEARED_AFTER_LHS_ID, rhs);
-				}
-				Object myVal = this.defns.get(rhs);
-				if (myVal == null) {
-					Assert.fail(EC.TLC_CONFIG_WRONG_SUBSTITUTION, new String[] { lhs.toString(), rhs });
-				}
-				if ((myVal instanceof OpDefNode) && rootOpDefs[i].getNumberOfArgs() != ((OpDefNode) myVal).getNumberOfArgs()) {
-					Assert.fail(EC.TLC_CONFIG_WRONG_SUBSTITUTION_NUMBER_OF_ARGS, new String[] { lhs.toString(), rhs });
-				}
-				rootOpDefs[i].setToolObject(toolId, myVal);
-				this.defns.put(lhs, myVal);
-				overriden.add(lhs.toString());
-			}
-		}
+        // Apply config file overrides to operator definitions:
+		// Note that we  can define recursion this way without declaring an operator to be recursive (see UndeclaredRecursion.tla)!
+        for (int i = 0; i < rootOpDefs.length; i++)
+        {
+            UniqueString lhs = rootOpDefs[i].getName();
+            String rhs = (String) overrides.get(lhs.toString());
+            if (rhs != null)
+            {
+                if (overrides.containsKey(rhs))
+                {
+                    Assert.fail(EC.TLC_CONFIG_RHS_ID_APPEARED_AFTER_LHS_ID, rhs);
+                }
+                Object myVal = this.defns.get(rhs);
+                if (myVal == null)
+                {
+                    Assert.fail(EC.TLC_CONFIG_WRONG_SUBSTITUTION, new String[] { lhs.toString(), rhs });
+                }
+                if ((myVal instanceof OpDefNode)
+                        && rootOpDefs[i].getNumberOfArgs() != ((OpDefNode) myVal).getNumberOfArgs())
+                {
+                    Assert.fail(EC.TLC_CONFIG_WRONG_SUBSTITUTION_NUMBER_OF_ARGS, new String[] { lhs.toString(), rhs });
+                }
+                rootOpDefs[i].setToolObject(toolId, myVal);
+                this.defns.put(lhs, myVal);
+                overriden.add(lhs.toString());
+            }
+        }
 
 		Enumeration keys = overrides.keys();
 		while (keys.hasMoreElements()) {
@@ -997,10 +1015,14 @@ public class SpecProcessor implements ValueConstants, ToolGlobals {
 		// first invocation of getModelConstraints. However, this caused a NPE
 		// in distributed mode due to concurrency issues and there was no
 		// apparent reason to process the model constraints lazily.
-		processModelConstraints();
-
-		processActionConstraints();
-	}
+        processModelConstraints();
+        
+        processActionConstraints();
+        
+        processRLReward();
+        
+        processPeriodic();
+    }
 
 	/**
 	 * Process the INIT and NEXT fields of the config file.
@@ -1298,84 +1320,155 @@ public class SpecProcessor implements ValueConstants, ToolGlobals {
 		}
 	}
 
-	/* Process the PROPERTIES field of the config file. */
-	private final void processConfigProps(String name, ExprNode pred, Context c, List subs) {
-		if (pred instanceof SubstInNode) {
-			SubstInNode pred1 = (SubstInNode) pred;
-			this.processConfigProps(name, pred1.getBody(), c, subs.cons(pred1));
-			return;
-		}
-		if (pred instanceof OpApplNode) {
-			OpApplNode pred1 = (OpApplNode) pred;
-			ExprOrOpArgNode[] args = pred1.getArgs();
-			if (args.length == 0) {
-				SymbolNode opNode = pred1.getOperator();
-				Object val = symbolNodeValueLookupProvider.lookup(opNode, c, false, toolId);
-				if (val instanceof OpDefNode) {
-					if (((OpDefNode) val).getArity() != 0) {
-						Assert.fail(EC.TLC_CONFIG_OP_NO_ARGS, opNode.getName().toString());
-					}
-					this.processConfigProps(opNode.getName().toString(), ((OpDefNode) val).getBody(), c, subs);
-				} else if (val == null) {
-					Assert.fail(EC.TLC_CONFIG_OP_NOT_IN_SPEC, opNode.getName().toString());
-				} else if (val instanceof IBoolValue) {
-					if (!((BoolValue) val).val) {
-						Assert.fail(EC.TLC_CONFIG_SPEC_IS_TRIVIAL, opNode.getName().toString());
-					}
-				} else {
-					Assert.fail(EC.TLC_CONFIG_OP_IS_EQUAL,
-							new String[] { opNode.getName().toString(), val.toString(), "property" });
-				}
-				return;
-			}
-			int opcode = BuiltInOPs.getOpCode(pred1.getOperator().getName());
-			if (opcode == OPCODE_cl || opcode == OPCODE_land) {
-				for (int i = 0; i < args.length; i++) {
-					ExprNode conj = (ExprNode) args[i];
-					this.processConfigProps(conj.toString(), conj, c, subs);
-				}
-				return;
-			}
-			if (opcode == OPCODE_box) {
-				ExprNode boxArg = (ExprNode) args[0];
-				if ((boxArg instanceof OpApplNode)
-						&& BuiltInOPs.getOpCode(((OpApplNode) boxArg).getOperator().getName()) == OPCODE_sa) {
-					OpApplNode boxArg1 = (OpApplNode) boxArg;
-					if (boxArg1.getArgs().length == 0) {
-						name = boxArg1.getOperator().getName().toString();
-					}
-					this.impliedActNameVec.addElement(name);
-					this.impliedActionVec.addElement(new Action(Specs.addSubsts(boxArg, subs), c));
-				} else if (symbolNodeValueLookupProvider.getLevelBound(boxArg, c, toolId) < 2) {
-					this.invVec.addElement(new Action(Specs.addSubsts(boxArg, subs), c));
-					if ((boxArg instanceof OpApplNode) && (((OpApplNode) boxArg).getArgs().length == 0)) {
-						name = ((OpApplNode) boxArg).getOperator().getName().toString();
-					}
-					this.invNameVec.addElement(name);
-				} else {
-					this.impliedTemporalVec.addElement(new Action(Specs.addSubsts(pred, subs), c));
-					this.impliedTemporalNameVec.addElement(name);
-				}
-				return;
-			}
-			// The following case added by LL on 13 Nov 2009 to handle subexpression names.
-			if (opcode == OPCODE_nop) {
-				this.processConfigProps(name, (ExprNode) args[0], c, subs);
-				return;
-			}
-		}
-		int level = symbolNodeValueLookupProvider.getLevelBound(pred, c, toolId);
-		if (level <= 1) {
-			this.impliedInitVec.addElement(new Action(Specs.addSubsts(pred, subs), c));
-			this.impliedInitNameVec.addElement(name);
-		} else if (level == 3) {
-			this.impliedTemporalVec.addElement(new Action(Specs.addSubsts(pred, subs), c));
-			this.impliedTemporalNameVec.addElement(name);
-		} else {
-			Assert.fail(EC.TLC_CONFIG_PROPERTY_NOT_CORRECTLY_DEFINED, name);
-		}
+    /* Process the PROPERTIES field of the config file. */
+    private final void processConfigProps(String name, ExprNode pred, Context c, List subs)
+    {
+        if (pred instanceof SubstInNode)
+        {
+            SubstInNode pred1 = (SubstInNode) pred;
+            this.processConfigProps(name, pred1.getBody(), c, subs.cons(pred1));
+            return;
+        }
+        if (pred instanceof OpApplNode)
+        {
+            OpApplNode pred1 = (OpApplNode) pred;
+            ExprOrOpArgNode[] args = pred1.getArgs();
+            if (args.length == 0)
+            {
+                SymbolNode opNode = pred1.getOperator();
+                Object val = symbolNodeValueLookupProvider.lookup(opNode, c, false, toolId);
+                if (val instanceof OpDefNode)
+                {
+                    if (((OpDefNode) val).getArity() != 0)
+                    {
+                        Assert.fail(EC.TLC_CONFIG_OP_NO_ARGS, opNode.getName().toString());
+                    }
+                    this.processConfigProps(opNode.getName().toString(), ((OpDefNode) val).getBody(), c, subs);
+                } else if (val == null)
+                {
+                    Assert.fail(EC.TLC_CONFIG_OP_NOT_IN_SPEC, opNode.getName().toString());
+                } else if (val instanceof IBoolValue)
+                {
+                    if (!((BoolValue) val).val)
+                    {
+                        Assert.fail(EC.TLC_CONFIG_SPEC_IS_TRIVIAL, opNode.getName().toString());
+                    }
+                } else
+                {
+                    Assert
+                            .fail(EC.TLC_CONFIG_OP_IS_EQUAL,
+                                    new String[] { opNode.getName().toString(), val.toString(), "property" });
+                }
+                return;
+            }
+            int opcode = BuiltInOPs.getOpCode(pred1.getOperator().getName());
+            if (opcode == OPCODE_cl || opcode == OPCODE_land)
+            {
+                for (int i = 0; i < args.length; i++)
+                {
+                    ExprNode conj = (ExprNode) args[i];
+                    this.processConfigProps(conj.toString(), conj, c, subs);
+                }
+                return;
+            }
+            if (opcode == OPCODE_box)
+            {
+                ExprNode boxArg = (ExprNode) args[0];
+                if ((boxArg instanceof OpApplNode)
+                        && BuiltInOPs.getOpCode(((OpApplNode) boxArg).getOperator().getName()) == OPCODE_sa)
+                {
+                    OpApplNode boxArg1 = (OpApplNode) boxArg;
+                    if (boxArg1.getArgs().length == 0)
+                    {
+                        name = boxArg1.getOperator().getName().toString();
+                    }
+                    this.impliedActNameVec.addElement(name);
+                    this.impliedActionVec.addElement(new Action(Specs.addSubsts(boxArg, subs), c));
+                } else if (symbolNodeValueLookupProvider.getLevelBound(boxArg, c, toolId) < 2)
+                {
+                    this.invVec.addElement(new Action(Specs.addSubsts(boxArg, subs), c));
+                    if ((boxArg instanceof OpApplNode) && (((OpApplNode) boxArg).getArgs().length == 0))
+                    {
+                        name = ((OpApplNode) boxArg).getOperator().getName().toString();
+                    }
+                    this.invNameVec.addElement(name);
+                } else
+                {
+                    this.impliedTemporalVec.addElement(new Action(Specs.addSubsts(pred, subs), c));
+                    this.impliedTemporalNameVec.addElement(name);
+                }
+                return;
+            }
+          // The following case added by LL on 13 Nov 2009 to handle subexpression names.
+          if (opcode ==  OPCODE_nop)
+           {
+               this.processConfigProps(name, (ExprNode) args[0], c, subs);
+               return;
+           }
+        }
+        int level = symbolNodeValueLookupProvider.getLevelBound(pred, c, toolId);
+        if (level <= 1)
+        {
+            this.impliedInitVec.addElement(new Action(Specs.addSubsts(pred, subs), c));
+            this.impliedInitNameVec.addElement(name);
+        } else if (level == 3)
+        {
+            this.impliedTemporalVec.addElement(new Action(Specs.addSubsts(pred, subs), c));
+            this.impliedTemporalNameVec.addElement(name);
+        } else
+        {
+            Assert.fail(EC.TLC_CONFIG_PROPERTY_NOT_CORRECTLY_DEFINED, name);
+        }
+    }
+    
+	private void processRLReward() {
+        String name = this.config.getRLReward();
+        if (name.length() != 0)
+        {        	
+			// Lookup in snapshot instead of defns because any constant expression in defns
+			// will have been evaluated into a Value. However, rlReward has type ExprNode
+			// and not Value.  More importantly, RLReward is allowed to be a constant expression.
+        	// Alternatively, the name of the RLReward definition could be added to vetoes, i.e.
+        	// vetos.add(this.config.getRLReward()); in this class' constructor.
+        	Object type = this.snapshot.get(name);
+        	if (type == null)
+        	{
+        		Assert.fail(EC.TLC_CONFIG_SPECIFIED_NOT_DEFINED, new String[] { "rlreward", name });
+        	}
+        	if (!(type instanceof OpDefNode))
+        	{
+        		// TODO This error message is bogus because we accept constant expressions as an RL_REWARD. 
+        		Assert.fail(EC.TLC_CONFIG_ID_MUST_NOT_BE_CONSTANT, new String[] { "rlreward", name });
+        	}
+        	OpDefNode def = (OpDefNode) type;
+        	if (def.getArity() != 0)
+        	{
+        		Assert.fail(EC.TLC_CONFIG_ID_REQUIRES_NO_ARG, new String[] { "rlreward", name });
+        		
+        	}
+        	rlReward = def.getBody();
+        }
 	}
-
+    
+	private void processPeriodic() {
+        String name = this.config.getPeriodic();
+        if (name.length() != 0)
+        {        	
+        	Object type = this.snapshot.get(name);
+        	if (type == null)
+        	{
+        		Assert.fail(EC.TLC_CONFIG_SPECIFIED_NOT_DEFINED, new String[] { "periodic", name });
+        	}
+        	OpDefNode def = (OpDefNode) type;
+        	if (def.getArity() != 0)
+        	{
+        		Assert.fail(EC.TLC_CONFIG_ID_REQUIRES_NO_ARG, new String[] { "periodic", name });
+        		
+        	}
+        	periodic = def.getBody();
+        }
+	}
+  
 	private void processActionConstraints() {
 		Vect names = this.config.getActionConstraints();
 		this.actionConstraints = new ExprNode[names.size()];
@@ -1721,6 +1814,14 @@ public class SpecProcessor implements ValueConstants, ToolGlobals {
 
 	public ExprNode[] getActionConstraints() {
 		return actionConstraints;
+	}
+
+	public ExprNode getRLReward() {
+		return rlReward;
+	}
+
+	public ExprNode getPeriodic() {
+		return periodic;
 	}
 
 	public ExprNode[] getAssumptions() {

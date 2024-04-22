@@ -59,11 +59,13 @@ public class TLCActionStackFrame extends TLCStateStackFrame {
 	public TLCActionStackFrame(TLCStackFrame parent, SemanticNode expr, Context c, Tool tool, TLCState predecessor,
 			Action a, TLCState ps, RuntimeException e) {
 		super(parent, expr, c, tool, ps /* super calls ps.deepCopy() */, e);
+		// We may create redundant TLCActionStackFrames when - for example - evaluating
+		// the enablement conditions of an action.
 		assert predecessor != null;
 		assert a != null;
 		assert ps != null;
 		// either ps is a stuttering state or has a predecessor.
-		assert predecessor.getLevel() == ps.getLevel() || ps.getPredecessor() != null;
+		assert predecessor.getLevel() == ps.getLevel() || ps.getPredecessor() != null || ps.isInitial();
 		// We *cannot* assert allAssigned here cause the check if ps is a good state (Tool#isGoodState) happens later.
 //		assert predecessor.allAssigned();
 //		assert ps.getPredecessor().allAssigned();

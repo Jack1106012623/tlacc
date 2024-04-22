@@ -49,6 +49,7 @@ import tlc2.tool.impl.ParameterizedSpecObj.PostCondition;
 import tlc2.tool.impl.Tool;
 import tlc2.tool.management.ModelCheckerMXWrapper;
 import tlc2.tool.management.TLCStandardMBean;
+import tlc2.tool.queue.IStateQueue;
 import tlc2.util.DotStateWriter;
 import tlc2.util.FP64;
 import tlc2.util.IStateWriter;
@@ -174,38 +175,43 @@ public class TLC {
 	/**
 	 * Whether welcome message has already been printed.
 	 */
-	private boolean welcomePrinted;
+    private boolean welcomePrinted;
+    
+    /**
+     * Fingerprint set configuration.
+     */
+    private FPSetConfiguration fpSetConfiguration;
+    
+    private final Map<String, Object> params;
+    
+    private int debugPort = -1;
+    private boolean suspend = !Boolean.getBoolean(TLC.class.getName() + ".nosuspend");
+    private boolean halt = !Boolean.getBoolean(TLC.class.getName() + ".nohalt");
+    
+    /**
+     * Interface to retrieve model properties.
+     */
+    private volatile ITool tool;
 
-	/**
-	 * Fingerprint set configuration.
-	 */
-	private FPSetConfiguration fpSetConfiguration;
+    /**
+     * Records errors as TLC runs.
+     */
+    private final ErrorTraceMessagePrinterRecorder recorder = new ErrorTraceMessagePrinterRecorder();
+    
+    /**
+     * Trace exploration spec generator.
+     */
+    private TraceExplorationSpec teSpec;
+    
+   
+    /**
+     * Rounds definition File.
+     */
+    private String roundsFile;
+    /**
+     * Initialization
+     */
 
-	private final Map<String, Object> params;
-
-	private int debugPort = -1;
-	private boolean suspend = true;
-	private boolean halt = true;
-
-	/**
-	 * Interface to retrieve model properties.
-	 */
-	private volatile ITool tool;
-
-	/**
-	 * Records errors as TLC runs.
-	 */
-	private final ErrorTraceMessagePrinterRecorder recorder = new ErrorTraceMessagePrinterRecorder();
-
-	/**
-	 * Trace exploration spec generator.
-	 */
-	private TraceExplorationSpec teSpec;
-
-	private String roundsFile;
-	/**
-	 * Initialization
-	 */
 	public TLC() {
 		welcomePrinted = false;
 
@@ -383,8 +389,10 @@ public class TLC {
 		boolean colorize = false;
 		boolean actionLabels = false;
 		boolean snapshot = false;
+		boolean constrained = false;
 		boolean stuttering = false;
-
+		boolean strict = false;
+		
 		boolean generateTESpec = true;
 		boolean generateTESpecBinaryTrace = true;
 		boolean forceGenerateTESpec = false;
@@ -425,41 +433,56 @@ public class TLC {
 							System.setProperty(Simulator.class.getName() + ".rlaction", Boolean.TRUE.toString());
 						}
 					}
+                    if(traceNum == Long.MAX_VALUE && traceFile != null) {
+                        printErrorMsg("Error: You need to specify a 'num' argument when using the 'file' argument, for example: '\"num=5,file=test.txt\"'.");
+                        return false;
+                    }
 				}
 			} else if (args[index].equals("-modelcheck")) {
 				index++;
-			} else if (args[index].equals("-difftrace")) {
-				index++;
-				TLCGlobals.printDiffsOnly = true;
-			} else if (args[index].equals("-deadlock")) {
-				index++;
-				deadlock = false;
-			} else if (args[index].equals("-cleanup")) {
-				index++;
-				cleanup = true;
-			} else if (args[index].equals("-nowarning")) {
-				index++;
-				TLCGlobals.warn = false;
-			} else if (args[index].equals("-gzip")) {
-				index++;
-				TLCGlobals.useGZIP = true;
-			} else if (args[index].equals("-terse")) {
-				index++;
-				TLCGlobals.expand = false;
-			} else if (args[index].equals("-continue")) {
-				index++;
-				TLCGlobals.continuation = true;
-			} else if (args[index].equals("-view")) {
-				index++;
-				TLCGlobals.useView = true;
-			} else if (args[index].equals("-debug")) {
-				index++;
-				TLCGlobals.debug = true;
-			} else if (args[index].equals("-debugger")) {
-				index++;
-				debugPort = 4712; // standard port.
-				if ((index < args.length)
-						&& (args[index].contains("port=") || args[index].contains("nosuspend") || args[index].contains("nohalt"))) {
+            } else if (args[index].equals("-difftrace"))
+            {
+                index++;
+                TLCGlobals.printDiffsOnly = true;
+            } else if (args[index].equals("-deadlock"))
+            {
+                index++;
+                deadlock = false;
+            } else if (args[index].equals("-cleanup"))
+            {
+                index++;
+                cleanup = true;
+            } else if (args[index].equals("-nowarning"))
+            {
+                index++;
+                TLCGlobals.warn = false;
+            } else if (args[index].equals("-gzip"))
+            {
+                index++;
+                TLCGlobals.useGZIP = true;
+            } else if (args[index].equals("-terse"))
+            {
+                index++;
+                TLCGlobals.expand = false;
+            } else if (args[index].equals("-continue"))
+            {
+                index++;
+                TLCGlobals.continuation = true;
+            } else if (args[index].equals("-view"))
+            {
+                index++;
+                TLCGlobals.useView = true;
+            } else if (args[index].equals("-debug"))
+            {
+                index++;
+                TLCGlobals.debug = true;
+            } else if (args[index].equals("-debugger"))
+            {
+                index++;
+                debugPort = 4712;  //standard port.
+				if ((index < args.length) && (args[index].contains("port=") || args[index].contains("nosuspend")
+						|| args[index].contains("nohalt") || args[index].contains("suspend")
+						|| args[index].contains("halt"))) {
 					suspend = !args[index].toLowerCase().contains("nosuspend");
 					halt = !args[index].toLowerCase().contains("nohalt");
 
@@ -521,21 +544,41 @@ public class TLC {
 					if (configFile.endsWith(TLAConstants.Files.CONFIG_EXTENSION)) {
 						configFile = configFile.substring(0, (configFile.length() - TLAConstants.Files.CONFIG_EXTENSION.length()));
 					}
-					index++;
-				} else {
-					printErrorMsg("Error: expect a file name for -config option.");
-					return false;
-				}
-			} else if (args[index].equals("-dump")) {
-				index++; // consume "-dump".
-				if (((index + 1) < args.length) && args[index].startsWith("dot")) {
-					final String dotArgs = args[index].toLowerCase();
-					index++; // consume "dot...".
-					asDot = true;
-					colorize = dotArgs.contains("colorize");
-					actionLabels = dotArgs.contains("actionlabels");
-					snapshot = dotArgs.contains("snapshot");
-					stuttering = dotArgs.contains("stuttering");
+                    index++;
+                } else
+                {
+                    printErrorMsg("Error: expect a file name for -config option.");
+                    return false;
+                }
+            } else if (args[index].equals("-dump"))
+            {
+                index++; // consume "-dump".
+                if (args[index].startsWith("class,"))
+                {
+                    // The provided class must extend the {@link tlc2.util.IStateWriter} interface
+                    // and a 0-arity constructor.  It will be searched on the classpath.
+					final String cls = args[index++].replace("class,", "");
+					try {
+						Class<? extends IStateWriter> clazz = Class.forName(cls).asSubclass(IStateWriter.class);
+						this.stateWriter = clazz.getDeclaredConstructor().newInstance();
+					} catch (final Exception e) {
+						e.printStackTrace();
+						printErrorMsg(
+								String.format("Trying to instantiate a custom IStateWriter implementation %s.", cls));
+						return false;
+					}
+                }
+                else if (((index + 1) < args.length) && args[index].startsWith("dot"))
+                {
+                	final String dotArgs = args[index].toLowerCase();
+                	index++; // consume "dot...".
+                	asDot = true;
+                	colorize = dotArgs.contains("colorize");
+                	actionLabels = dotArgs.contains("actionlabels");
+                	snapshot = dotArgs.contains("snapshot");
+                	constrained = dotArgs.contains("constrained");
+                	stuttering = dotArgs.contains("stuttering");
+                	strict = dotArgs.contains("strict");
 					dumpFile = getDumpFile(args[index++], ".dot");
 				} else if (index < args.length) {
 					dumpFile = getDumpFile(args[index++], ".dump");
@@ -563,6 +606,11 @@ public class TLC {
 						final List<PostCondition> pcs = (List<PostCondition>) params
 								.computeIfAbsent(ParameterizedSpecObj.POST_CONDITIONS, k -> new ArrayList<PostCondition>());
 						pcs.add(new PostCondition("_TLCTrace", "_TLCTrace", "_TLCTraceFile", args[index++]));
+					} else if ("tlcplain".equalsIgnoreCase(fmt)) {
+						@SuppressWarnings("unchecked")
+						final List<PostCondition> pcs = (List<PostCondition>) params.computeIfAbsent(
+								ParameterizedSpecObj.POST_CONDITIONS, k -> new ArrayList<PostCondition>());
+						pcs.add(new PostCondition("_TLCTracePlain", "_TLCTrace", "_TLCTraceFile", args[index++]));
 					} else if ("dot".equalsIgnoreCase(fmt)) {
 						@SuppressWarnings("unchecked")
 						final List<PostCondition> pcs = (List<PostCondition>) params
@@ -985,9 +1033,11 @@ public class TLC {
 					if(TLCGlobals.cc) {
 						this.stateWriter = new DotCCStateWriter(dumpFile, colorize, actionLabels, snapshot, stuttering);
 					} else {
-						this.stateWriter = new DotStateWriter(dumpFile, colorize, actionLabels, snapshot, stuttering);
+						this.stateWriter = new DotStateWriter(dumpFile, colorize, actionLabels, snapshot, constrained, stuttering, strict);
 					}
-					
+//======= TODO: need to check DotCCStateWriter, because DotStateWriter has been changed
+//					this.stateWriter = new DotStateWriter(dumpFile, colorize, actionLabels, snapshot, constrained, stuttering, strict);
+//>>>>>>> tlc/master
 				} else {
 					this.stateWriter = new StateWriter(dumpFile);
 				}
@@ -1212,9 +1262,10 @@ public class TLC {
 		final String fpSetClassSimpleName = fpSetConfig.getImplementation()
 				.substring(fpSetConfig.getImplementation().lastIndexOf(".") + 1);
 
-		final String stateQueueClassSimpleName = ModelChecker.getStateQueueName();
-
-		// fpSetClassSimpleName and stateQueueClassSimpleName ignored in DFS mode.
+		
+		final String stateQueueClassSimpleName = IStateQueue.getStateQueueName();
+		
+		//  fpSetClassSimpleName and stateQueueClassSimpleName ignored in DFS mode.
 		final Map<String, String> result = new LinkedHashMap<>();
 		result.put("workers", String.valueOf(TLCGlobals.getNumWorkers()));
 		result.put("plural", TLCGlobals.getNumWorkers() == 1 ? "" : "s");

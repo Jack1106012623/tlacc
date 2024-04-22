@@ -2,9 +2,11 @@ package tlc2.cc;
 
 import java.io.IOException;
 import java.io.Serializable;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.stream.Collectors;
 
 import tla2sany.semantic.OpDeclNode;
 import tla2sany.semantic.SemanticNode;
@@ -28,11 +30,11 @@ import util.WrongInvocationException;
 public class TLCStateMutCC extends TLCState implements Cloneable, Serializable {
 
 	private CCState cc;
-	
+
 	private IValue values[];
 
 	private TLCState predecessor;
-	
+
 	private static ITool mytool = null;
 
 	/**
@@ -47,22 +49,27 @@ public class TLCStateMutCC extends TLCState implements Cloneable, Serializable {
 	 */
 	private static IMVPerm[] perms = null;
 
-	private TLCStateMutCC(IValue[] vals) { this.values = vals; }
-	private TLCStateMutCC(IValue[] vals, CCState ccstate) { 
-		this.values = vals; 
+	private TLCStateMutCC(IValue[] vals) {
+		this.values = vals;
+	}
+
+	private TLCStateMutCC(IValue[] vals, CCState ccstate) {
+		this.values = vals;
 		this.cc = ccstate;
 	}
+
 	public static void setCCEmpty() {
-		((TLCStateMutCC)Empty).cc = CCState.Empty;
+		((TLCStateMutCC) Empty).cc = CCState.Empty;
 	}
+
 	public static void setVariables(OpDeclNode[] variables) {
 		vars = variables;
 		IValue[] vals = new IValue[vars.length];
 		Empty = new TLCStateMutCC(vals);
-		
+
 		System.out.println("set Empty's CCState");
 		CC.setEmpty();
-		
+
 		// SZ 10.04.2009: since this method is called exactly one from Spec#processSpec
 		// moved the call of UniqueString#setVariables to that place
 
@@ -83,7 +90,7 @@ public class TLCStateMutCC extends TLCState implements Cloneable, Serializable {
 	public final TLCState createEmpty() {
 		IValue[] vals = new IValue[vars.length];
 		CCState ccstate = CCState.createEmpty();
-		return new TLCStateMutCC(vals,ccstate);
+		return new TLCStateMutCC(vals, ccstate);
 	}
 
 	// TODO equals without hashcode!
@@ -137,15 +144,15 @@ public class TLCStateMutCC extends TLCState implements Cloneable, Serializable {
 		for (int i = 0; i < len; i++) {
 			vals[i] = this.values[i];
 		}
-		return copyExt(new TLCStateMutCC(vals,this.cc.copy()));
+		return copyExt(new TLCStateMutCC(vals, this.cc.copy()));
 	}
-	
+
 	@Override
 	protected TLCState copy(TLCState copy) {
-	  super.copy(copy);
-	  return copyExt(copy);
-  }
-	
+		super.copy(copy);
+		return copyExt(copy);
+	}
+
 	public final TLCState deepCopy() {
 		int len = this.values.length;
 		IValue[] vals = new IValue[len];
@@ -155,7 +162,7 @@ public class TLCStateMutCC extends TLCState implements Cloneable, Serializable {
 				vals[i] = val.deepCopy();
 			}
 		}
-		return deepCopy(new TLCStateMutCC(vals,this.cc.copy()));
+		return deepCopy(new TLCStateMutCC(vals, this.cc.copy()));
 	}
 
 	@Override
@@ -163,7 +170,7 @@ public class TLCStateMutCC extends TLCState implements Cloneable, Serializable {
 		super.deepCopy(copy);
 		return copyExt(copy);
 	}
-	
+
 	private TLCState copyExt(TLCState copy) {
 		if (this.predecessor != null) {
 			copy.setPredecessor(this.predecessor);
@@ -183,7 +190,7 @@ public class TLCStateMutCC extends TLCState implements Cloneable, Serializable {
 		this.action = action;
 		return this;
 	}
-	
+
 	public final StateVec addToVec(StateVec states) {
 		return states.addElement(this.copy());
 	}
@@ -395,10 +402,10 @@ public class TLCStateMutCC extends TLCState implements Cloneable, Serializable {
 				result.append("\n");
 			}
 		}
-		if(this.cc != null) {
+		if (this.cc != null) {
 			result.append("/\\ ");
 			result.append(this.cc.toString());
-		}else {
+		} else {
 			result.append("ccstate is null\n");
 		}
 		return result.toString();
@@ -406,12 +413,18 @@ public class TLCStateMutCC extends TLCState implements Cloneable, Serializable {
 
 	/* Returns a string representation of this state. */
 	public final String toString(TLCState lastState) {
+		return toString(Arrays.stream(vars).map(o -> o.getName()).collect(Collectors.toList()).toArray(UniqueString[]::new),
+				lastState);
+	}
+
+	/* Returns a string representation of this state. */
+	public final String toString(UniqueString[] vars, TLCState lastState) {
 		StringBuffer result = new StringBuffer();
-		TLCStateMutCC lstate = (TLCStateMutCC) lastState;
+		TLCState lstate = lastState;
 
 		int vlen = vars.length;
 		if (vlen == 1) {
-			UniqueString key = vars[0].getName();
+			UniqueString key = vars[0];
 			IValue val = this.lookup(key);
 			IValue lstateVal = lstate.lookup(key);
 			if (!lstateVal.equals(val)) {
@@ -420,7 +433,7 @@ public class TLCStateMutCC extends TLCState implements Cloneable, Serializable {
 			}
 		} else {
 			for (int i = 0; i < vlen; i++) {
-				UniqueString key = vars[i].getName();
+				UniqueString key = vars[i];
 				IValue val = this.lookup(key);
 				IValue lstateVal = lstate.lookup(key);
 				if (!lstateVal.equals(val)) {
@@ -429,6 +442,12 @@ public class TLCStateMutCC extends TLCState implements Cloneable, Serializable {
 					result.append(" = " + Values.ppr(val) + "\n");
 				}
 			}
+		}
+		if (((TLCStateMutCC) lastState).cc != null) {
+			result.append("/\\ ");
+			result.append(((TLCStateMutCC) lastState).cc.toString());
+		} else {
+			result.append("ccstate is null\n");
 		}
 		return result.toString();
 	}
@@ -444,10 +463,11 @@ public class TLCStateMutCC extends TLCState implements Cloneable, Serializable {
 	public CCState getCCState() {
 		return this.cc;
 	}
+
 	public void setCCState(CCState ccstate) {
 		this.cc = ccstate;
 	}
-	
+
 	@Override
 	public TLCState setPredecessor(final TLCState predecessor) {
 		this.predecessor = predecessor;
@@ -457,11 +477,11 @@ public class TLCStateMutCC extends TLCState implements Cloneable, Serializable {
 	public TLCState getPredecessor() {
 		return predecessor;
 	}
-	
+
 	@Override
 	public TLCState unsetPredecessor() {
 		this.predecessor = null;
 		return this;
 	}
-	
+
 }

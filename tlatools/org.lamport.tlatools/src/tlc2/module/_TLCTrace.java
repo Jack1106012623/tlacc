@@ -41,6 +41,10 @@ public class _TLCTrace {
 			throws IOException {
 		final ValueOutputStream vos = new ValueOutputStream(new File(absolutePath.val.toString()), true);
 		try {
+			// Calling IValue#fingerprint guarantees that value can be serialized because
+			// fingerprinting also finalizes any internal data structures. For example, it
+			// converts the pset of SubsetValue.
+			value.fingerPrint(0L);
 			value.write(vos);
 		} finally {
 			vos.close();

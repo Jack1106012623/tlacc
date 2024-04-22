@@ -193,6 +193,14 @@ AncestorProperties ==
      IN  /\ \A n \in Node \ {initiator} : anc[n, initiator]
          /\ IsIrreflexive(anc, Node)
 
+DebugExpression(self) ==
+	self # initiator
+
+DebugExpression2(self) ==
+	self = initiator
+
+NotNotTypeOK ==
+	~~TypeOK
 =============================================================================
 \* Modification History
 \* Last modified Wed Jun 17 09:23:17 PDT 2020 by markus

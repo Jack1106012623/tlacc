@@ -21,4 +21,8 @@ public interface TreeNode {
   public boolean                local();
   public void                   printST(int indentation);
   public String					getHumanReadableImage();
+  public void setLevel(int lvl);
+  public int getLevel();
+  public TreeNode getParent();
+  public void setParent();
 }

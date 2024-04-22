@@ -1,6 +1,6 @@
 // Copyright (c) 2003 Compaq Corporation.  All rights reserved.
 // Portions Copyright (c) 2003 Microsoft Corporation.  All rights reserved.
-// Copyright (c) 2022, Oracle and/or its affiliates.
+// Copyright (c) 2022, 2023, Oracle and/or its affiliates.
 // Last modified on Wed 12 Jul 2017 at 16:10:00 PST by ian morris nieves
 //      modified on Thu  2 Aug 2007 at 10:25:48 PST by lamport
 //      modified on Fri Jan  4 22:46:57 PST 2002 by yuanyu
@@ -22,8 +22,6 @@ import tla2sany.semantic.ExternalModuleTable;
 import tla2sany.semantic.FormalParamNode;
 import tla2sany.semantic.LabelNode;
 import tla2sany.semantic.LetInNode;
-import tla2sany.semantic.LevelConstants;
-import tla2sany.semantic.LevelNode;
 import tla2sany.semantic.OpApplNode;
 import tla2sany.semantic.OpArgNode;
 import tla2sany.semantic.OpDeclNode;
@@ -65,19 +63,18 @@ import tlc2.value.IMVPerm;
 import tlc2.value.IValue;
 import tlc2.value.ValueConstants;
 import tlc2.value.Values;
-import tlc2.value.impl.Applicable;
 import tlc2.value.impl.BoolValue;
 import tlc2.value.impl.Enumerable;
 import tlc2.value.impl.Enumerable.Ordering;
-import tlc2.value.impl.EvaluatingValue;
 import tlc2.value.impl.FcnLambdaValue;
 import tlc2.value.impl.FcnParams;
 import tlc2.value.impl.FcnRcdValue;
+import tlc2.value.impl.FunctionValue;
+import tlc2.value.impl.IntValue;
 import tlc2.value.impl.LazySupplierValue;
 import tlc2.value.impl.LazyValue;
 import tlc2.value.impl.MVPerm;
 import tlc2.value.impl.MVPerms;
-import tlc2.value.impl.MethodValue;
 import tlc2.value.impl.ModelValue;
 import tlc2.value.impl.OpLambdaValue;
 import tlc2.value.impl.OpValue;
@@ -118,6 +115,27 @@ public abstract class Tool
     implements ValueConstants, ToolGlobals, ITool
 {
 
+	
+  	public static final String TLCSTATEMUTEXT_KEY = Tool.class.getName() + "." + TLCStateMutExt.class.getSimpleName();
+
+	/*
+	 * LL: It's probably a good thing that TLC doesn't implement [\cdot] because it
+	 * describes the semicolon in programming languages, and it might encourage
+	 * users to write actions as if they were writing pieces of a program rather
+	 * than formulas. \cdot is weird for the same reason that ENABLED is, because in
+	 * A \cdot B, the primed variables of A and the unprimed variables of B are
+	 * actually (the same) bound variables. This means that substitution doesn't
+	 * distribute over it. Semicolon of programming languages has the same problem,
+	 * and it would complicate showing that one program implements another except
+	 * TLA is the only formalism in which you can say that one program implements
+	 * another.
+	 * 
+	 * Reduction in TLA (with Ernie Cohen) CONCUR'98 Concurrency Theory, David
+	 * Sangiorgi and Robert de Simone editors. Lecture Notes in Computer Science,
+	 * number 1466, (1998), 317-331.
+	 */
+	public static final String CDOT_KEY = Tool.class.getName() + ".cdot";
+	
   	public static final String PROBABILISTIC_KEY = Tool.class.getName() + ".probabilistic";
     /*
 	 * Prototype, do *not* activate when checking safety or liveness!!!:
@@ -195,7 +213,7 @@ public abstract class Tool
 
       this.toolMode = mode;
 		// set variables to the static filed in the state
-		if (mode == Mode.Executor || mode == Mode.MC_DEBUG) {
+		if (mode == Mode.Simulation || mode == Mode.Executor || mode == Mode.MC_DEBUG || Boolean.getBoolean(TLCSTATEMUTEXT_KEY)) {
 			assert TLCState.Empty instanceof TLCStateMutExt;
 			TLCStateMutExt.setTool(this);
 		} else if(mode == Mode.Simulation) {
@@ -287,7 +305,7 @@ public abstract class Tool
           this.getActions(next1.getBody(), con, opDefNode, cm);
         }
         else {
-          Action action = new Action(next1, con, opDefNode);
+          Action action = new Action(this, next1, con, opDefNode);
           this.actionVec.addElement(action);
         }
         return;
@@ -302,7 +320,7 @@ public abstract class Tool
             this.getActions(next1.getBody(), con, opDefNode, cm);
           }
           else {
-            Action action = new Action(next1, con, opDefNode);
+            Action action = new Action(this, next1, con, opDefNode);
             this.actionVec.addElement(action);
           }
           return;
@@ -358,7 +376,7 @@ public abstract class Tool
         }
       }
       if (opcode == 0) {
-        Action action = new Action(next, con, (OpDefNode) opNode);
+        Action action = new Action(this, next, con, (OpDefNode) opNode);
         this.actionVec.addElement(action);
         return;
       }
@@ -376,7 +394,7 @@ public abstract class Tool
         	  // \E i \in {} : ...
         	  // \E i \in Nat: FALSE
         	  // ...
-        	  this.actionVec.addElement(new Action(next, con, actionName));
+        	  this.actionVec.addElement(new Action(this, next, con, actionName));
         	  return;
           }
           Context econ;
@@ -387,7 +405,7 @@ public abstract class Tool
 					: "AssertionError when creating Actions. This case should have been handled by Enum.isDone conditional above!";
         }
         catch (Throwable e) {
-          Action action = new Action(next, con, actionName);
+          Action action = new Action(this, next, con, actionName);
           this.actionVec.removeAll(cnt);
           this.actionVec.addElement(action);
         }
@@ -404,7 +422,7 @@ public abstract class Tool
     default:
       {
         // We handle all the other builtin operators here.
-        Action action = new Action(next, con, actionName);
+        Action action = new Action(this, next, con, actionName);
         this.actionVec.addElement(action);
         return;
       }
@@ -521,6 +539,8 @@ public abstract class Tool
 		if (acts.isEmpty()) {
 			if (coverage) {
 				cm.incInvocations();
+			}
+			if (TLCGlobals.Coverage.isActionEnabled()) {
 				cm.getRoot().incInvocations();
 			}
 			states.addElement(ps.copy().setAction(acts.getAction()));
@@ -544,6 +564,7 @@ public abstract class Tool
 						// Increase "states found".
 						cm.getRoot().incSecondary();
 					}
+					this.processUnsatisfied(ps, acts.carPred(), acts.carContext(), states, cm);
 					return;
 				}
 				// Move on to the next action in the ActionItemList.
@@ -600,26 +621,16 @@ public abstract class Tool
 
           if (val instanceof LazyValue) {
             LazyValue lv = (LazyValue)val;
-            if (lv.getValue() == null || lv.isUncachable()) {
+            val = lv.getCachedValue(this, ps, null, EvalControl.Clear);
+            if (val == null) {
               this.getInitStates(lv.expr, acts, lv.con, ps, states, cm);
               return;
             }
-            val = lv.getValue();
           }
 
           Object bval = val;
-          if (alen == 0) {
-            if (val instanceof MethodValue) {
-              bval = ((MethodValue)val).apply(EmptyArgs, EvalControl.Init);
-            } else if (val instanceof EvaluatingValue) {
-              // Allow EvaluatingValue overwrites to have zero arity.
-              bval = ((EvaluatingValue) val).eval(this, args, c, ps, TLCState.Empty, EvalControl.Init, cm);
-            }
-          }
-          else {
-            if (val instanceof OpValue) {
-          	  bval = ((OpValue) val).eval(this, args, c, ps, TLCState.Empty, EvalControl.Init, cm);
-            }
+          if (val instanceof OpValue) {
+            bval = ((OpValue) val).eval(this, args, c, ps, TLCState.Empty, EvalControl.Init, cm);
           }
 
           if (opcode == 0)
@@ -736,11 +747,11 @@ public abstract class Tool
               }
               fval = fcn.fcnRcd;
             }
-            else if (!(fval instanceof Applicable)) {
+            else if (!(fval instanceof FunctionValue)) {
               Assert.fail("In computing initial states, a non-function (" +
                           fval.getKindString() + ") was applied as a function.\n" + init, init, c);
             }
-            Applicable fcn = (Applicable) fval;
+            FunctionValue fcn = (FunctionValue) fval;
             Value argVal = this.eval(args[1], c, ps, TLCState.Empty, EvalControl.Init, cm);
             Value bval = fcn.apply(argVal, EvalControl.Init);
             if (!(bval instanceof BoolValue))
@@ -1025,7 +1036,7 @@ public abstract class Tool
 						  new String[] { "next states", "boolean", bval.toString(), acts.pred.toString() }, pred, c);
 			  }
 			  if (!((BoolValue) bval).val) {
-				  return s1;
+				  return this.processUnsatisfied(s0, action, s1, pred, c, nss, cm);
 			  }
 		  } else if (kind == -2) {
 			  // Identical to default handling below (line 876). Ignored during this optimization.
@@ -1048,6 +1059,17 @@ public abstract class Tool
 	  return s1.copy();
   }
 
+  @ExpectInlined
+  protected TLCState processUnsatisfied(final TLCState ps, final SemanticNode pred, final Context c, IStateFunctor states, CostModel cm) {
+	  return states.addUnsatisfiedState(ps, pred, c);
+  }
+
+  @ExpectInlined
+  protected TLCState processUnsatisfied(final TLCState s0, final Action action, final TLCState s1,
+			final SemanticNode pred, final Context c, final INextStateFunctor nss, final CostModel cm) {
+	return nss.addUnsatisfiedState(s0, action, s1, pred, c);
+  }
+  
   /* getNextStatesAppl */
 
   @ExpectInlined
@@ -1088,10 +1110,10 @@ public abstract class Tool
 
           if (val instanceof LazyValue) {
             final LazyValue lv = (LazyValue)val;
-            if (lv.getValue() == null || lv.isUncachable()) {
+            val = lv.getCachedValue(this, s0, s1, EvalControl.Clear);
+            if (val == null) {
               return this.getNextStates(action, lv.expr, acts, lv.con, s0, s1, nss, lv.cm);
             }
-            val = lv.getValue();
           }
 
           //TODO If all eval/apply in getNextStatesApplEvalAppl would be side-effect free (ie. not mutate args, c, s0,...), 
@@ -1113,17 +1135,8 @@ public abstract class Tool
   
   private final Object getNextStatesApplEvalAppl(final int alen, final ExprOrOpArgNode[] args, final Context c,
 			final TLCState s0, final TLCState s1, final CostModel cm, final Object val) {
-	      if (alen == 0) {
-        if (val instanceof MethodValue) {
-        	return ((MethodValue)val).apply(EmptyArgs, EvalControl.Clear);
-        } else if (val instanceof EvaluatingValue) {
-        	return ((EvaluatingValue)val).eval(this, args, c, s0, s1, EvalControl.Clear, cm);
-       }
-      }
-      else {
-        if (val instanceof OpValue) { // EvaluatingValue sub-class of OpValue!
-       	  return ((OpValue) val).eval(this, args, c, s0, s1, EvalControl.Clear, cm);
-        }
+      if (val instanceof OpValue) { // EvaluatingValue sub-class of OpValue!
+        return ((OpValue) val).eval(this, args, c, s0, s1, EvalControl.Clear, cm);
       }
       return val;
   }
@@ -1235,11 +1248,11 @@ public abstract class Tool
 	      }
 	      fval = fcn.fcnRcd;
 	    }
-	    if (!(fval instanceof Applicable)) {
+	    if (!(fval instanceof FunctionValue)) {
 	      Assert.fail("In computing next states, a non-function (" +
 	                  fval.getKindString() + ") was applied as a function.\n" + pred, pred, c);
 	    }
-	    Applicable fcn = (Applicable)fval;
+	    FunctionValue fcn = (FunctionValue)fval;
 	    Value argVal = this.eval(args[1], c, s0, s1, EvalControl.Clear, cm);
 	    Value bval = fcn.apply(argVal, EvalControl.Clear);
 	    if (!(bval instanceof BoolValue)) {
@@ -1408,18 +1421,48 @@ public abstract class Tool
 	  }
 	case OPCODE_cdot:
 	  {
-	    Assert.fail("The current version of TLC does not support action composition.", pred, c);
-	    /***
-	    TLCState s01 = TLCStateFun.Empty;
-	    StateVec iss = new StateVec(0);
-	    this.getNextStates(action, args[0], ActionItemList.Empty, c, s0, s01, iss);
-	    int sz = iss.size();
-	    for (int i = 0; i < sz; i++) {
-	      s01 = iss.elementAt(i);
-	      this.getNextStates(action, args[1], acts, c, s01, s1, nss);
-	    }
-	    ***/
-	    return s1;
+			if (Boolean.getBoolean(CDOT_KEY)) {
+// This assertion test is insufficient to prevent the inadvertent activation of the experimental cdot feature within substitution,
+// such as refinement mapping, as the context could be an ordinary context like quantification.
+//				Assert.check(c.isEmpty(),
+//						"The current version of TLC only supports basic action composition involving no substitution/instantiation.",
+//						pred, c);
+				
+				// next-state relation:
+				// s -(A \cdot B)-> u  <=>  s -A-> t -B-> u
+				TLCState t = s0.copyWith(s1);
+				
+				// s -A-> t
+				final StateVec iss = new StateVec(0);
+				this.getNextStates(action, args[0], acts, c, s0, t, iss, cm);
+				
+				// t -B-> u
+				int sz = iss.size();
+				nss.incrementStatesGenerated(sz);
+				for (int i = 0; i < sz; i++) {
+					final TLCState u = s1.copy();
+					t = iss.elementAt(i);
+
+					// iss2 does not call the unsatisfied next feature 
+					this.getNextStates(action, args[1], acts, c, t, u, new INextStateFunctor() {
+						@Override
+						public TLCState addUnsatisfiedState(final TLCState t, final Action action, final TLCState u,
+								final SemanticNode pred, final Context c) {
+							return nss.addUnsatisfiedState(s0, action, u.setPredecessor(s0), pred, c);
+						}
+						@Override
+						public Object addElement(final TLCState t, final Action a, final TLCState u) {
+							// s -(A \cdot B)-> u 
+							return nss.addElement(s0, action, u.setPredecessor(s0));
+						}}, cm);
+				}
+				return resState;
+			} else {
+				Assert.fail(
+						"The current version of TLC does not support action composition.  An incomplete implementation can be enabled via the tlc2.tool.impl.Tool.cdot=true java property.",
+						pred, c);
+				return s1;
+			}
 	  }
 	// The following case added by LL on 13 Nov 2009 to handle subexpression names.
 	case OPCODE_nop:
@@ -1576,13 +1619,6 @@ public abstract class Tool
 		}
 		// see getState(..)
 		IdThread.setCurrentState(current);
-		
-		// See asserts in tlc2.debug.TLCActionStackFrame.TLCActionStackFrame(TLCStackFrame, SemanticNode, Context, Tool, TLCState, Action, TLCState, RuntimeException)
-		if (successor.getLevel() != current.getLevel()) {
-			// Calling setPrecessor when the levels are equal would increase the level of
-			// successor.
-			successor.setPredecessor(current);
-		}
 
 		try {
 			final TLCState alias = eval(getAliasSpec(), Context.Empty, current, successor, EvalControl.Clear).toState();
@@ -1631,15 +1667,6 @@ public abstract class Tool
 
 		// see getState(..)
 		IdThread.setCurrentState(current.state);
-
-		// See asserts in
-		// tlc2.debug.TLCActionStackFrame.TLCActionStackFrame(TLCStackFrame,
-		// SemanticNode, Context, Tool, TLCState, Action, TLCState, RuntimeException)
-		if (successor.getLevel() != current.state.getLevel()) {
-			// Calling setPrecessor when the levels are equal would increase the level of
-			// successor.
-			successor.setPredecessor(current);
-		}
 
 		try {
 			final TLCState alias = eval(getAliasSpec(), ctxt, current.state, successor, EvalControl.Clear).toState();
@@ -1826,114 +1853,117 @@ public abstract class Tool
 //          if (val instanceof Supplier) {
 //        	  val = ((Supplier) val).get();
 //          }
-          
+
           // First, unlazy if it is a lazy value. We cannot use the cached
           // value when s1 == null or isEnabled(control).
-			if (val instanceof LazyValue) {
-				final LazyValue lv = (LazyValue) val;
-				if (s1 == null) {
-					val = this.eval(lv.expr, lv.con, s0, TLCState.Null, control, lv.getCostModel());
-			    } else if (lv.isUncachable() || EvalControl.isEnabled(control)) {
-					// Never use cached LazyValues in an ENABLED expression. This is why all
-					// this.enabled* methods pass EvalControl.Enabled (the only exception being the
-					// call on line line 2799 which passes EvalControl.Primed). This is why we can
-			    	// be sure that ENALBED expressions are not affected by the caching bug tracked
-			    	// in Github issue 113 (see below).
-					val = this.eval(lv.expr, lv.con, s0, s1, control, lv.getCostModel());
-				} else {
-					val = lv.getValue();
-					if (val == null) {
-						final Value res = this.eval(lv.expr, lv.con, s0, s1, control, lv.getCostModel());
-						// This check has been suggested by Yuan Yu on 01/15/2018:
-						//
-						// If init-states are being generated, level has to be <= ConstantLevel for
-						// caching/LazyValue to be allowed. If next-states are being generated, level
-						// has to be <= VariableLevel. The level indicates if the expression to be
-						// evaluated contains only constants, constants & variables, constants & 
-						// variables and primed variables (thus action) or is a temporal formula.
-						//
-						// This restriction is in place to fix Github issue 113
-						// (https://github.com/tlaplus/tlaplus/issues/113) - 
-						// TLC can generate invalid sets of init or next-states caused by broken
-						// LazyValue evaluation. The related tests are AssignmentInit* and
-						// AssignmentNext*. Without this fix, TLC essentially reuses a stale lv.val when
-						// it needs to re-evaluate res because the actual operands to eval changed.
-						// Below is Leslie's formal description of the bug:
-						// 
-						// The possible initial values of some variable  var  are specified by a subformula
-						// 
-						// F(..., var, ...)
-						// 
-						// in the initial predicate, for some operator F such that expanding the
-						// definition of F results in a formula containing more than one occurrence of
-						// var , not all occurring in separate disjuncts of that formula.
-						// 
-						// The possible next values of some variable  var  are specified by a subformula
-						// 
-						// F(..., var', ...)
-						// 
-						// in the next-state relation, for some operator F such that expanding the
-						// definition of F results in a formula containing more than one occurrence of
-						// var' , not all occurring in separate disjuncts of that formula.
-						// 
-						// An example of the first case is an initial predicate  Init  defined as follows:
-						// 
-						// VARIABLES x, ...
-						// F(var) == \/ var \in 0..99 /\ var % 2 = 0
-						//           \/ var = -1
-						// Init == /\ F(x)
-						//         /\ ...
-						// 
-						// The error would not appear if  F  were defined by:
-						// 
-						// F(var) == \/ var \in {i \in 0..99 : i % 2 = 0}
-						//           \/ var = -1
-						// 
-						// or if the definition of  F(x)  were expanded in  Init :
-						// 
-						// Init == /\ \/ x \in 0..99 /\ x % 2 = 0
-						//            \/ x = -1
-						//         /\ ...
-						// 
-						// A similar example holds for case 2 with the same operator F and the
-						// next-state formula
-						// 
-						// Next == /\ F(x')
-						//         /\ ...
-						// 
-						// The workaround is to rewrite the initial predicate or next-state relation so
-						// it is not in the form that can cause the bug. The simplest way to do that is
-						// to expand (in-line) the definition of F in the definition of the initial
-						// predicate or next-state relation.
-						//
-						// Note that EvalControl.Init is only set in the scope of this.getInitStates*,
-						// but not in the scope of methods such as this.isInModel, this.isGoodState...
-						// which are invoked by DFIDChecker and ModelChecker#doInit and doNext. These
-						// invocation however don't pose a problem with regards to issue 113 because
-						// they don't generate the set of initial or next states but get passed fully
-						// generated/final states.
-						//
-						// !EvalControl.isInit(control) means Tool is either processing the spec in
-						// this.process* as part of initialization or that next-states are being
-						// generated. The latter case has to restrict usage of cached LazyValue as
-						// discussed above.
-						final int level = ((LevelNode) lv.expr).getLevel(); // cast to LevelNode is safe because LV only subclass of SN.
-						if ((EvalControl.isInit(control) && level <= LevelConstants.ConstantLevel)
-								|| (!EvalControl.isInit(control) && level <= LevelConstants.VariableLevel)) {
-							// The performance benefits of caching values is generally debatable. The time
-							// it takes TLC to check a reasonable sized model of the PaxosCommit [1] spec is
-							// ~2h with, with limited caching due to the fix for issue 113 or without
-							// caching. There is no measurable performance difference even though the change
-							// for issue 113 reduces the cache hits from ~13 billion to ~4 billion. This was
-							// measured with an instrumented version of TLC.
-							// [1] general/performance/PaxosCommit/  
-							lv.setValue(res);
-						}
-						val = res;
-					}
-				}
-
-			}
+          if (val instanceof LazyValue) {
+              final LazyValue lv = (LazyValue) val;
+              if (s1 == null) {
+                  // NOTE 2023/4/7: Strictly speaking, this branch is not necessary.  TLC could return
+                  // `lv.getValue(...)` here as it does in the else-branch below.  Today I considered
+                  // removing it since it prevents LazyValue's caching benefits in some cases.
+                  // However, I retained it for two reasons:
+                  //   (1) There are some debugger-related tests that make assertions about when certain
+                  //       LazyValues are evaluated and cached.  Those tests fail if TLC skips this branch.
+                  //       I suspect those tests need some additional thought; if it is really important
+                  //       that TLC not cache LazyValues during certain debugger actions, it might need a
+                  //       stronger prevention mechanism.
+                  //   (2) I am worried that this branch serves some subtle purpose I do not yet understand.
+                  //       I do not want to remove it unless I am sure that I understand why it was here to
+                  //       begin with.
+                  val = this.eval(lv.expr, lv.con, s0, TLCState.Null, control, lv.getCostModel());
+              } else {
+                  // NOTE 2023/6/15: TLC has historically had a few critical bugs due to mishandling of cached
+                  // LazyValues.  With a little refactoring we think we have finally squashed them by moving
+                  // the safety responsibility out of this method and into the LazyValue class itself.  So,
+                  // this branch can be simply:
+                  return lv.getValue(this, s0, s1, control);
+                  // However, I am retaining the big comment that used to live here about LazyValues.  It contains
+                  // some out-of-date notes about the code, but also some useful insights that are still relevant.
+                  //
+                  // ------------------------------------------------------------------------------------------------
+                  // Never use cached LazyValues in an ENABLED expression. This is why all
+                  // this.enabled* methods pass EvalControl.Enabled (the only exception being the
+                  // call on line line 2799 which passes EvalControl.Primed). This is why we can
+                  // be sure that ENABLED expressions are not affected by the caching bug tracked
+                  // in Github issue 113 (see below).
+                  //
+                  // This check has been suggested by Yuan Yu on 01/15/2018:
+                  //
+                  // If init-states are being generated, level has to be <= ConstantLevel for
+                  // caching/LazyValue to be allowed. If next-states are being generated, level
+                  // has to be <= VariableLevel. The level indicates if the expression to be
+                  // evaluated contains only constants, constants & variables, constants &
+                  // variables and primed variables (thus action) or is a temporal formula.
+                  //
+                  // This restriction is in place to fix Github issue 113
+                  // (https://github.com/tlaplus/tlaplus/issues/113) -
+                  // TLC can generate invalid sets of init or next-states caused by broken
+                  // LazyValue evaluation. The related tests are AssignmentInit* and
+                  // AssignmentNext*. Without this fix, TLC essentially reuses a stale lv.val when
+                  // it needs to re-evaluate res because the actual operands to eval changed.
+                  // Below is Leslie's formal description of the bug:
+                  //
+                  // The possible initial values of some variable  var  are specified by a subformula
+                  //
+                  // F(..., var, ...)
+                  //
+                  // in the initial predicate, for some operator F such that expanding the
+                  // definition of F results in a formula containing more than one occurrence of
+                  // var , not all occurring in separate disjuncts of that formula.
+                  //
+                  // The possible next values of some variable  var  are specified by a subformula
+                  //
+                  // F(..., var', ...)
+                  //
+                  // in the next-state relation, for some operator F such that expanding the
+                  // definition of F results in a formula containing more than one occurrence of
+                  // var' , not all occurring in separate disjuncts of that formula.
+                  //
+                  // An example of the first case is an initial predicate  Init  defined as follows:
+                  //
+                  // VARIABLES x, ...
+                  // F(var) == \/ var \in 0..99 /\ var % 2 = 0
+                  //           \/ var = -1
+                  // Init == /\ F(x)
+                  //         /\ ...
+                  //
+                  // The error would not appear if  F  were defined by:
+                  //
+                  // F(var) == \/ var \in {i \in 0..99 : i % 2 = 0}
+                  //           \/ var = -1
+                  //
+                  // or if the definition of  F(x)  were expanded in  Init :
+                  //
+                  // Init == /\ \/ x \in 0..99 /\ x % 2 = 0
+                  //            \/ x = -1
+                  //         /\ ...
+                  //
+                  // A similar example holds for case 2 with the same operator F and the
+                  // next-state formula
+                  //
+                  // Next == /\ F(x')
+                  //         /\ ...
+                  //
+                  // The workaround is to rewrite the initial predicate or next-state relation so
+                  // it is not in the form that can cause the bug. The simplest way to do that is
+                  // to expand (in-line) the definition of F in the definition of the initial
+                  // predicate or next-state relation.
+                  //
+                  // Note that EvalControl.Init is only set in the scope of this.getInitStates*,
+                  // but not in the scope of methods such as this.isInModel, this.isGoodState...
+                  // which are invoked by DFIDChecker and ModelChecker#doInit and doNext. These
+                  // invocation however don't pose a problem with regards to issue 113 because
+                  // they don't generate the set of initial or next states but get passed fully
+                  // generated/final states.
+                  //
+                  // !EvalControl.isInit(control) means Tool is either processing the spec in
+                  // this.process* as part of initialization or that next-states are being
+                  // generated. The latter case has to restrict usage of cached LazyValue as
+                  // discussed above.
+                  // ------------------------------------------------------------------------------------------------
+              }
+          }
 
 			Value res = null;
           if (val instanceof OpDefNode) {
@@ -1946,19 +1976,8 @@ public abstract class Tool
           }
           else if (val instanceof Value) {
             res = (Value)val;
-            int alen = args.length;
-            if (alen == 0) {
-              if (val instanceof MethodValue) {
-                res = ((MethodValue)val).apply(EmptyArgs, EvalControl.Clear);
-              } else if (val instanceof EvaluatingValue) {
-            	  // Allow EvaluatingValue overwrites to have zero arity.
-            	  res = ((EvaluatingValue) val).eval(this, args, c, s0, s1, control, cm);
-              }
-            }
-            else {
-              if (val instanceof OpValue) {
-            	  res = ((OpValue) val).eval(this, args, c, s0, s1, control, cm);
-               } 
+            if (val instanceof OpValue) {
+           	  res = ((OpValue) val).eval(this, args, c, s0, s1, control, cm);
             }
           }
           /*********************************************************************
@@ -2247,13 +2266,13 @@ public abstract class Tool
             Value fval = this.eval(args[0], c, s0, s1, EvalControl.setKeepLazy(control), cm);
             if ((fval instanceof FcnRcdValue) ||
                 (fval instanceof FcnLambdaValue)) {
-              Applicable fcn = (Applicable)fval;
+              FunctionValue fcn = (FunctionValue)fval;
               Value argVal = this.eval(args[1], c, s0, s1, control, cm);
               result = fcn.apply(argVal, control);
             }
             else if ((fval instanceof TupleValue) ||
                      (fval instanceof RecordValue)) {
-              Applicable fcn = (Applicable)fval;
+              FunctionValue fcn = (FunctionValue)fval;
               if (args.length != 2) {
                 Assert.fail("Attempted to evaluate an expression of form f[e1, ... , eN]" +
                             "\nwith f a tuple or record and N > 1.\n" + expr, expr, c);
@@ -2486,11 +2505,11 @@ public abstract class Tool
         case OPCODE_domain:
           {
             Value arg = this.eval(args[0], c, s0, s1, control, cm);
-            if (!(arg instanceof Applicable)) {
+            if (!(arg instanceof FunctionValue)) {
               Assert.fail("Attempted to apply the operator DOMAIN to a non-function\n(" +
                           arg.getKindString() + ")\n" + expr, expr, c);
             }
-            return setSource(expr, ((Applicable)arg).getDomain());
+            return setSource(expr, ((FunctionValue)arg).getDomain());
           }
         case OPCODE_enabled:
           {
@@ -2639,8 +2658,8 @@ public abstract class Tool
         	  // MAK 03/2019:  Cannot reproduce this but without this check the nested evaluation
         	  // fails with a NullPointerException which subsequently is swallowed. This makes it 
         	  // impossible for a user to diagnose what is going on.  Since I cannot reproduce the
-        	  // actual expression, I leave this commented for.  I recall an expression along the
-        	  // lines of:
+        	  // actual expression, I leave this commented for posterity.  I recall an expression
+        	  // along the lines of:
         	  //    ...
         	  //    TLCSet(23, CHOOSE p \in pc: pc[p] # pc[p]')
         	  //    ...
@@ -2688,19 +2707,42 @@ public abstract class Tool
           }
         case OPCODE_cdot:
           {
-            Assert.fail("The current version of TLC does not support action composition.", expr, c);
-            /***
-            TLCState s01 = TLCStateFun.Empty;
-            StateVec iss = new StateVec(0);
-            this.getNextStates(args[0], ActionItemList.Empty, c, s0, s01, iss);
-            int sz = iss.size();
-            for (int i = 0; i < sz; i++) {
-              s01 = iss.elementAt(i);
-              this.eval(args[1], c, s01, s1, control);
-            }
-            ***/
-            return null;    // make compiler happy
-          }
+				if (Boolean.getBoolean(CDOT_KEY)) {
+					// Properties:
+					// s -(A \cdot B)-> u  <=>  s -A-> t -B-> u
+
+					// Let A and B be two sub-actions of the next-state relation, and let v and c be
+					// two variables such that c appears in either A or B, while v does not appear
+					// in both A and B. We cannot infer the value of variable v at state t from the
+					// initial state s0 and the *partial* state s1, unlike the handling of \cdot in
+					// the evaluation of the next-state relation as previously discussed, because s1
+					// is no longer partial. However, this is not a concern because the variable v
+					// will be addressed elsewhere, given that it does not appear in both A and B,
+					// and therefore, in the composed A \cdot B.
+					TLCState t = TLCState.Empty.createEmpty();  // not t = s0.copyWith(s1); !
+					
+					// s -A-> t
+					final StateVec iss = new StateVec(0);
+					this.getNextStates(Action.UNKNOWN, args[0], ActionItemList.Empty, c, s0, t, iss, cm);
+					
+					// t -B-> u
+					int sz = iss.size();
+					for (int i = 0; i < sz; i++) {
+						t = iss.elementAt(i);
+						
+						final Value res = this.eval(args[1], c, t, s1, control, cm);
+						if (((BoolValue) res).val) {
+							return BoolValue.ValTrue;
+						}
+					}
+					return BoolValue.ValFalse;
+				} else {
+					Assert.fail(
+							"The current version of TLC does not support action composition.  An incomplete implementation can be enabled via the tlc2.tool.impl.Tool.cdot=true java property.",
+							expr, c);
+					return null; // make compiler happy
+				}
+	          }
         case OPCODE_sf:     // SF
           {
             Assert.fail(EC.TLC_ENCOUNTERED_FORMULA_IN_PREDICATE, new String[]{"SF", expr.toString()}, expr, c);
@@ -2765,12 +2807,21 @@ public abstract class Tool
   /* This method determines if a state satisfies the model constraints. */
   @Override
   public final boolean isInModel(TLCState state) throws EvalException {
-    ExprNode[] constrs = this.getModelConstraints();
-    for (int i = 0; i < constrs.length; i++) {
-      final CostModel cm = coverage ? ((Action) constrs[i].getToolObject(toolId)).cm : CostModel.DO_NOT_RECORD;
-      IValue bval = this.eval(constrs[i], Context.Empty, state, cm);
+	    ExprNode[] constrs = this.getModelConstraints();
+	    for (int i = 0; i < constrs.length; i++) {
+	    	if (!isInModel(constrs[i], state)) {
+	    		return false;
+	    	}
+	    }
+	    return true;
+  }
+
+  @Override
+  public final boolean isInModel(final ExprNode constraint, final TLCState state) throws EvalException {
+      final CostModel cm = coverage ? ((Action) constraint.getToolObject(toolId)).cm : CostModel.DO_NOT_RECORD;
+      IValue bval = this.eval(constraint, Context.Empty, state, cm);
       if (!(bval instanceof BoolValue)) {
-        Assert.fail(EC.TLC_EXPECTED_VALUE, new String[]{"boolean", constrs[i].toString()}, constrs[i]);
+        Assert.fail(EC.TLC_EXPECTED_VALUE, new String[]{"boolean", constraint.toString()}, constraint);
       }
       if (!((BoolValue)bval).val) {
   		  if (coverage) {
@@ -2781,20 +2832,27 @@ public abstract class Tool
   		  if (coverage) {
   			  cm.incSecondary();
 		  }
+  		  return true;
       }
-    }
-    return true;
   }
 
   /* This method determines if a pair of states satisfy the action constraints. */
   @Override
   public final boolean isInActions(TLCState s1, TLCState s2) throws EvalException {
-    ExprNode[] constrs = this.getActionConstraints();
-    for (int i = 0; i < constrs.length; i++) {
-      final CostModel cm = coverage ? ((Action) constrs[i].getToolObject(toolId)).cm : CostModel.DO_NOT_RECORD;
-      Value bval = this.eval(constrs[i], Context.Empty, s1, s2, EvalControl.Clear, cm);
+	    final ExprNode[] constrs = this.getActionConstraints();
+	    for (int i = 0; i < constrs.length; i++) {
+	    	if (!isInActions(constrs[i], s1, s2)) {
+	    		return false;
+	    	}
+	    }
+	    return true;
+  }
+  
+  public final boolean isInActions(final ExprNode constraint, TLCState s1, TLCState s2) throws EvalException {
+      final CostModel cm = coverage ? ((Action) constraint.getToolObject(toolId)).cm : CostModel.DO_NOT_RECORD;
+      Value bval = this.eval(constraint, Context.Empty, s1, s2, EvalControl.Clear, cm);
       if (!(bval instanceof BoolValue)) {
-        Assert.fail(EC.TLC_EXPECTED_VALUE, new String[]{"boolean", constrs[i].toString()}, constrs[i]);
+        Assert.fail(EC.TLC_EXPECTED_VALUE, new String[]{"boolean", constraint.toString()}, constraint);
       }
       if (!((BoolValue)bval).val) {
   		  if (coverage) {
@@ -2805,11 +2863,23 @@ public abstract class Tool
   		  if (coverage) {
   			  cm.incSecondary();
 		  }
+  		  return true;
       }
-    }
-    return true;
   }
   
+  @Override
+  public final double evalReward(TLCState s1, TLCState s2, final double fallback) throws EvalException {
+	    final ExprNode constrs = this.getRLReward();
+	    if (constrs != null) {
+	    	Value bval = this.eval(constrs, Context.Empty, s1, s2, EvalControl.Clear, CostModel.DO_NOT_RECORD);
+	    	if (!(bval instanceof IntValue)) {
+	    		Assert.fail(EC.TLC_EXPECTED_VALUE, new String[]{"integer", constrs.toString()}, constrs);
+	    	}
+	    	return ((IntValue) bval).val * 1d;
+	    }
+	    return fallback;
+	  }
+
   @Override
   public final boolean hasStateOrActionConstraints() {
 	  return this.getModelConstraints().length > 0 || this.getActionConstraints().length > 0;
@@ -2984,20 +3054,9 @@ public abstract class Tool
           }
 
           Object bval = val;
-          if (alen == 0)
+          if (val instanceof OpValue)
           {
-            if (val instanceof MethodValue)
-            {
-              bval = ((MethodValue) val).apply(EmptyArgs, EvalControl.Clear); // EvalControl.Clear is ignored by MethodValuea#apply
-            } else if (val instanceof EvaluatingValue) {
-              bval = ((EvaluatingValue) val).eval(this, args, c, s0, s1, EvalControl.Enabled, cm);
-            }
-          } else
-          {
-            if (val instanceof OpValue)
-            {
-            	bval = ((OpValue) val).eval(this, args, c, s0, s1, EvalControl.Enabled, cm);
-             }
+          	bval = ((OpValue) val).eval(this, args, c, s0, s1, EvalControl.Enabled, cm);
           }
 
           if (opcode == 0)
@@ -3117,9 +3176,9 @@ public abstract class Tool
               }
               fval = fcn.fcnRcd;
             }
-            if (fval instanceof Applicable)
+            if (fval instanceof FunctionValue)
             {
-              Applicable fcn = (Applicable) fval;
+              FunctionValue fcn = (FunctionValue) fval;
               Value argVal = this.eval(args[1], c, s0, s1, EvalControl.Enabled, cm);
               Value bval = fcn.apply(argVal, EvalControl.Enabled); // EvalControl.Enabled not taken into account by any subclass of Applicable
               if (!(bval instanceof BoolValue))
@@ -3247,20 +3306,28 @@ public abstract class Tool
           }
         case OPCODE_cdot:
           {
-            Assert.fail("The current version of TLC does not support action composition.", pred, c);
-            /***
-            TLCState s01 = TLCStateFun.Empty;
-            StateVec iss = new StateVec(0);
-            this.getNextStates(args[0], ActionItemList.Empty, c, s0, s01, iss);
-            int sz = iss.size();
-            for (int i = 0; i < sz; i++) {
-              s01 = iss.elementAt(i);
-              TLCState s2 = this.enabled(args[1], acts, c, s01, s1);
-              if (s2 != null) return s2;
-            }
-            ***/
-            return null; // make compiler happy
-          }
+				if (Boolean.getBoolean(CDOT_KEY)) {
+					// ENABLED:
+					// s -(A \cdot B)-> u  <=>  s -A-> t -B-> u
+					TLCState t = s0.copyWith(s1);
+					final StateVec iss = new StateVec(0);
+					this.getNextStates(Action.UNKNOWN, args[0], ActionItemList.Empty, c, s0, t, iss, cm);
+					final int sz = iss.size();
+					for (int i = 0; i < sz; i++) {
+						t = iss.elementAt(i);
+						final TLCState s2 = this.enabled(args[1], acts, c, t, s1, cm);
+						if (s2 != null) {
+							return s2;
+						}
+					}
+					return null;
+				} else {
+					Assert.fail(
+							"The current version of TLC does not support action composition.  An incomplete implementation can be enabled via the tlc2.tool.impl.Tool.cdot=true java property.",
+							pred, c);
+					return null; // make compiler happy
+				}
+	          }
         case OPCODE_leadto:
           {
             Assert.fail("In computing ENABLED, TLC encountered a temporal formula" + " (a ~> b).\n" + pred, pred, c);
@@ -3602,7 +3669,6 @@ public abstract class Tool
       throw new EvalException(EC.TLC_FAILED_TO_RECOVER_NEXT);
     }
     tlcStateInfo.stateNumber = sinfo.stateNumber + 1;
-    tlcStateInfo.predecessorState = sinfo;
     tlcStateInfo.fp = fp;
     return tlcStateInfo;
   }

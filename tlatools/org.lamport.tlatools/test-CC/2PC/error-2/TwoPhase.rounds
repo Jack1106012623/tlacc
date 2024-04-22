@@ -1,5 +1,4 @@
 @Msg.Type=Set
 @Msg.Var=msgs
-[NULL, RMPrepareOrAbort(*)]
-[NULL, TMRcvPrepared(*)]
+[RMPrepareOrAbort(*),TMRcvPrepared(*)]
 [TMCommitOrAbort,RMRcvCommitOrAbortMsg(*)]

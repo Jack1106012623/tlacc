@@ -14,6 +14,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.stream.Collectors;
 
+import tla2sany.semantic.ExprNode;
 import tla2sany.semantic.OpDeclNode;
 import tlc2.TLCGlobals;
 import tlc2.cc.CC;
@@ -24,12 +25,11 @@ import tlc2.tool.fp.FPSetConfiguration;
 import tlc2.tool.fp.FPSetFactory;
 import tlc2.tool.impl.CallStackTool;
 import tlc2.tool.liveness.LiveCheck;
-import tlc2.tool.queue.DiskByteArrayQueue;
-import tlc2.tool.queue.DiskStateQueue;
 import tlc2.tool.queue.IStateQueue;
 import tlc2.util.IStateWriter;
 import tlc2.util.SetOfStates;
 import tlc2.util.statistics.BucketStatistics;
+import tlc2.value.impl.BoolValue;
 import tlc2.value.impl.CounterExample;
 import util.Assert;
 import util.DebugPrinter;
@@ -49,7 +49,7 @@ import util.UniqueString;
 public class ModelChecker extends AbstractChecker
 {
 
-	protected static final boolean coverage = TLCGlobals.isCoverageEnabled();
+	protected static final boolean ActionCoverage = TLCGlobals.Coverage.isActionEnabled();
 	/**
 	 * If the state/ dir should be cleaned up after a successful model run
 	 */
@@ -109,10 +109,7 @@ public class ModelChecker extends AbstractChecker
         // call the abstract constructor
         super(tool, metadir, stateWriter, deadlock, fromChkpt, startTime);
 
-		this.theStateQueue = useByteArrayQueue()
-				? new DiskByteArrayQueue(this.metadir)
-				: new DiskStateQueue(this.metadir);
-        // this.theStateQueue = new MemStateQueue(this.metadir);
+        this.theStateQueue = IStateQueue.get(this.metadir);
 
         // Finally, initialize the trace file:
         this.trace = new ConcurrentTLCTrace(this.metadir, this.tool.getRootName(), this.tool);
@@ -263,7 +260,7 @@ public class ModelChecker extends AbstractChecker
                             MP.format(this.theStateQueue.size()) });
                 	
                     report("checking liveness");
-                    result = liveCheck.finalCheck(tool.getLiveness());
+                    result = liveCheck.finalCheck(tool.noDebug());
                     report("liveness check complete");
                     if (result != EC.NO_ERROR)
                     {
@@ -467,7 +464,7 @@ public class ModelChecker extends AbstractChecker
 		final long fp = succState.fingerPrint();
 		final boolean seen = this.theFPSet.put(fp);
 		// Write out succState when needed:
-		this.allStateWriter.writeState(curState, succState, !seen, action);
+		this.allStateWriter.writeState(curState, succState, seen ? IStateWriter.IsSeen : IStateWriter.IsUnseen, action);
 		if (!seen)
 		{
 			// Write succState to trace only if it satisfies the
@@ -479,7 +476,7 @@ public class ModelChecker extends AbstractChecker
 		    // be in the trace in case either invariant or implied action
 		    // checks want to print the trace. 
 			worker.writeState(curState, fp, succState);
-			if (coverage) {
+			if (ActionCoverage) {
 				action.cm.incSecondary();
 			}
 		}
@@ -682,7 +679,8 @@ public class ModelChecker extends AbstractChecker
 		// internally diffs the time expired since its last invocation which is
 		// only milliseconds here when called twice.
 		final boolean createCheckPoint = TLCGlobals.doCheckPoint();
-		if ((!this.checkLiveness || runtimeRatio > TLCGlobals.livenessRatio || !liveCheck.doLiveCheck()) && !forceLiveCheck && !createCheckPoint) {
+		final ExprNode periodic = tool.getSpecProcessor().getPeriodic();
+		if ((!this.checkLiveness || runtimeRatio > TLCGlobals.livenessRatio || !liveCheck.doLiveCheck()) && !forceLiveCheck && !createCheckPoint && periodic == null) {
 			updateRuntimeRatio(0L);
 			
 			// Do not suspend the state queue if neither check-pointing nor
@@ -699,7 +697,7 @@ public class ModelChecker extends AbstractChecker
             if (this.checkLiveness && (runtimeRatio < TLCGlobals.livenessRatio || forceLiveCheck))
             {
 				final long preLivenessChecking = System.currentTimeMillis();
-				final int result = liveCheck.check(tool.getLiveness(), forceLiveCheck);
+				final int result = liveCheck.check(tool.noDebug(), forceLiveCheck);
                 if (result != EC.NO_ERROR)
                 {
                     return result;
@@ -708,6 +706,10 @@ public class ModelChecker extends AbstractChecker
                 updateRuntimeRatio(System.currentTimeMillis() - preLivenessChecking);
             } else if (runtimeRatio > TLCGlobals.livenessRatio) {
             	updateRuntimeRatio(0L);
+            }
+            
+            if (periodic != null && BoolValue.ValFalse.equals(tool.eval(periodic))) {
+       			return EC.TLC_ASSUMPTION_FALSE;
             }
 
             if (createCheckPoint) {
@@ -1003,16 +1005,6 @@ public class ModelChecker extends AbstractChecker
     {
         DebugPrinter.print(e);
     }
-    
-	private static boolean useByteArrayQueue() {
-		return Boolean.getBoolean(ModelChecker.class.getName() + ".BAQueue");
-	}
-
-	public static String getStateQueueName() {
-		// Ideally, this wouldn't hard-code the simple name of the classes but we don't
-		// have access to the class file yet.
-		return useByteArrayQueue() ? "DiskByteArrayQueue" : "DiskStateQueue";
-	}
 
 	/* (non-Javadoc)
 	 * @see tlc2.tool.AbstractChecker#getStatesGenerated()
@@ -1025,6 +1017,14 @@ public class ModelChecker extends AbstractChecker
 		}
     	return sum;
     }
+	
+	/* (non-Javadoc)
+	 * @see tlc2.tool.AbstractChecker#getInitialStatesGenerated()
+	 */
+	@Override
+	public long getInitialStatesGenerated() {
+		return numberOfInitialStates;
+	}
 
 	/* (non-Javadoc)
 	 * @see tlc2.tool.AbstractChecker#getProgress()
@@ -1166,7 +1166,7 @@ public class ModelChecker extends AbstractChecker
 
 						// build behavior graph for liveness checking
 						if (checkLiveness) {
-							liveCheck.addInitState(tool.getLiveness(), curState, fp);
+							liveCheck.addInitState(tool.noDebug(), curState, fp);
 						}
 					}
 				}

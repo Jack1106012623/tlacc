@@ -164,9 +164,14 @@ public class EchoDebuggerTest extends TLCDebuggerTestCase {
 		assertEquals(3, stackFrames.length);
 		assertTLCFrame(stackFrames[2], 12,  8, 21, 30, RM);
 		assertTLCFrame(stackFrames[1], 13, 11, 13, 41, RM);
-		assertTLCFrame(stackFrames[0], 13, 17, 13, 41, RM); // [Node \X Node -> BOOLEAN] in Echo
+		assertTLCFrame(stackFrames[0], 13, 11, 13, 11, RM); // [Node \X Node -> BOOLEAN] in Echo
 
 		stackFrames = debugger.stepOut();
+		assertEquals(2, stackFrames.length);
+		assertTLCFrame(stackFrames[1], 12,  8, 21, 30, RM);
+		assertTLCFrame(stackFrames[0], 13, 11, 13, 41, RM);
+
+		stackFrames = debugger.next();
 		assertEquals(2, stackFrames.length);
 		assertTLCFrame(stackFrames[1], 12,  8, 21, 30, RM);
 		assertTLCFrame(stackFrames[0], 15, 11, 15, 32, RM); // IsIrreflexive(R, Node)
@@ -174,11 +179,12 @@ public class EchoDebuggerTest extends TLCDebuggerTestCase {
 		stackFrames = debugger.next();
 		assertEquals(2, stackFrames.length);
 		assertTLCFrame(stackFrames[1], 12,  8, 21, 30, RM);
-		assertTLCFrame(stackFrames[0], 18, 11, 18, 30, RM); // IsSymmetric(R, Node)
+		assertTLCFrame(stackFrames[0], 15, 11, 15, 32, RM); // IsSymmetric(R, Node)
+		
 
 		// Breakpoint takes precedence over manual steps.
 		debugger.replaceAllBreakpointsWith("Relation", 49);
-		stackFrames = debugger.next(2);
+		stackFrames = debugger.continue_();
 		assertEquals(8, stackFrames.length);
 		assertTLCFrame(stackFrames[0], 49, 3, 50, 38, "Relation", null); //TODO Replace null with the expected Context.
 		// Too lazy to check all the in-between frames.
@@ -214,11 +220,19 @@ public class EchoDebuggerTest extends TLCDebuggerTestCase {
 		assertTLCStateFrame(stackFrames[0], 167, 6, 167, 63, RM, Context.Empty);
 		frame = (TLCStateStackFrame) stackFrames[0];
 		assertEquals(2, frame.state.getLevel());
+		
+		// Debug TypeOK with a debug expression breakpoint that is referencing TypeOK via NotTypeOK.
+		debugger.unsetBreakpoints();
+		SetBreakpointsArguments sba = createBreakpointArgument(RM, 167, "NotNotTypeOK");
+		debugger.setBreakpoints(sba);
+		stackFrames = debugger.continue_();
+		assertEquals(12, stackFrames.length);
+		assertTLCStateFrame(stackFrames[0], 167, 6, 167, 63, RM, Context.Empty);
 
 		// Replace the previous breakpoint with the same one except for a hit condition
 		// corresponding to a trace length of four states.
 		debugger.unsetBreakpoints();
-		SetBreakpointsArguments sba = createBreakpointArgument(RM, 104);
+		sba = createBreakpointArgument(RM, 104);
 		sba.getBreakpoints()[0].setHitCondition("5");
 		debugger.setBreakpoints(sba);
 		stackFrames = debugger.continue_();
@@ -226,17 +240,29 @@ public class EchoDebuggerTest extends TLCDebuggerTestCase {
 		assertTLCActionFrame(stackFrames[0], 104, 16, 107, 40, RM, (Context) null, getVars());
 
 		// Check n0 action has expected number of successor states.
-		sba = createBreakpointArgument(RM, 103, 1, 1); // Inline breakpoint set on the LHS of Action definition.
+		sba = createBreakpointArgument(RM, 103, 1, 1, "DebugExpression"); // Inline breakpoint set on the LHS of Action definition.
 		debugger.setBreakpoints(sba);
 		stackFrames = debugger.continue_();
 		assertEquals(1, stackFrames.length);
 		assertTLCSuccessorFrame(stackFrames[0], 103, 1, 109, 59, RM, null, 1);
+
+		sba = createBreakpointArgument(RM, 103, 1, 1, "DebugExpression2"); // Inline breakpoint set on the LHS of Action definition.
+		debugger.setBreakpoints(sba);
+		stackFrames = debugger.continue_();
+		assertEquals(2, stackFrames.length);
+		assertTLCSuccessorFrame(stackFrames[1], 103, 1, 109, 59, RM, null, 0);
 
 		sba = createBreakpointArgument(RM, 112, 0, 13);
 		debugger.setBreakpoints(sba);
 		stackFrames = debugger.continue_();
 		assertEquals(4, stackFrames.length);
 		assertTLCActionFrame(stackFrames[0], 112, 16, 129, 71, RM, (Context) null, getVars());
+		
+		sba = createBreakpointArgument(RM, 133, "DebugExpression");
+		debugger.setBreakpoints(sba);
+		stackFrames = debugger.continue_();
+		assertEquals(4, stackFrames.length);
+		assertTLCActionFrame(stackFrames[0], 133, 16, 138, 40, RM, (Context) null, getVars());
 		
 		// Remove all breakpoints and run the spec to completion.
 		debugger.unsetBreakpoints();

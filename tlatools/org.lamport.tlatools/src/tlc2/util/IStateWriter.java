@@ -27,6 +27,7 @@ package tlc2.util;
 
 import java.io.IOException;
 
+import tla2sany.semantic.SemanticNode;
 import tlc2.tool.Action;
 import tlc2.tool.TLCState;
 
@@ -47,18 +48,28 @@ public interface IStateWriter {
 		 */
 		DOTTED;
 	}
+	
+	public static final short IsNotInModel = 1 << 1;
+	public static final short IsUnseen = 0;
+	public static final short IsSeen = 1;
+	
+	default boolean isSet(int v, int control) {
+		return (v & control) == control;
+	}
 
 	void writeState(TLCState state);
 
-	void writeState(TLCState state, TLCState successor, boolean successorStateIsNew);
+	void writeState(TLCState state, TLCState successor, short stateFlags);
 	
-	void writeState(TLCState state, TLCState successor, boolean successorStateIsNew, Action action);
+	void writeState(TLCState state, TLCState successor, short stateFlags, Action action);
 
-	void writeState(TLCState state, TLCState successor, boolean successorStateIsNew, Visualization visualization);
+	void writeState(TLCState state, TLCState successor, short stateFlags, Action action, SemanticNode pred);
+
+	void writeState(TLCState state, TLCState successor, short stateFlags, Visualization visualization);
 	
-	void writeState(TLCState state, TLCState successor, BitVector actionChecks, int from, int length, boolean successorStateIsNew);
+	void writeState(TLCState state, TLCState successor, BitVector actionChecks, int from, int length, short stateFlags);
 
-	void writeState(TLCState state, TLCState successor, BitVector actionChecks, int from, int length, boolean successorStateIsNew, Visualization visualization);
+	void writeState(TLCState state, TLCState successor, BitVector actionChecks, int from, int length, short stateFlags, Visualization visualization);
 	
 	void close();
 
@@ -67,6 +78,8 @@ public interface IStateWriter {
 	boolean isNoop();
 	
 	boolean isDot();
+	
+	boolean isConstrained();
 
 	void snapshot() throws IOException;
 }

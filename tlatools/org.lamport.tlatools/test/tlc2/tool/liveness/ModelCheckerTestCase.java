@@ -134,6 +134,9 @@ public abstract class ModelCheckerTestCase extends CommonTestCase {
 			// is placed in TEST_MODEL
 			final List<String> args = new ArrayList<String>(6);
 			
+			args.add("-metadir");
+			args.add(TLCGlobals.metaRoot + FileUtil.separator + getClass().getCanonicalName());
+			
 			// *Don't* check for deadlocks. All tests are interested in liveness
 			// checks which are shielded away by deadlock checking. TLC finds a
 			// deadlock (if it exists) before it finds most liveness violations.
@@ -168,8 +171,15 @@ public abstract class ModelCheckerTestCase extends CommonTestCase {
 				args.add("1");
 			}
 			
+			// Some tests require a large number of threads to successfully
+			// test their desired property. They request this by overriding
+			// the getNumberOfThreads() method. This can lead to over-
+			// subscribing system cores when running tests in parallel, but
+			// is usually okay because the tests run for only a second or so.
+			// If a test runs for a longer period of time using many threads
+			// then it should be run sequentially instead of in parallel.
 			args.add("-workers");
-			args.add(Integer.toString(getNumberOfThreads()));
+			args.add(Integer.toString(this.getNumberOfThreads()));
 			
 			// Never create checkpoints. They distort performance tests and are
 			// of no use anyway.

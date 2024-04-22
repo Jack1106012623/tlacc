@@ -102,19 +102,8 @@ public class Generator implements ASTConstants, SyntaxTreeConstants, LevelConsta
 	 ***********************************************************************/
 	protected OpArgNode nullOpArg;
 
-	private final static UniqueString S_e = UniqueString.uniqueStringOf("\\E");
-	private final static UniqueString S_ex = UniqueString.uniqueStringOf("\\exists");
-	private final static UniqueString S_f = UniqueString.uniqueStringOf("\\A");
-	private final static UniqueString S_fx = UniqueString.uniqueStringOf("\\always");
-	private final static UniqueString S_te = UniqueString.uniqueStringOf("\\EE");
-	private final static UniqueString S_tf = UniqueString.uniqueStringOf("\\AA");
-	private final static UniqueString S_a = UniqueString.uniqueStringOf("<<");
-	private final static UniqueString S_brack = UniqueString.uniqueStringOf("[");
-	private final static UniqueString S_sf = UniqueString.uniqueStringOf("SF_");
-	private final static UniqueString S_wf = UniqueString.uniqueStringOf("WF_");
 	private final static UniqueString S_at = UniqueString.uniqueStringOf("@");
 	private final static UniqueString S_lambda = UniqueString.uniqueStringOf("LAMBDA");
-	private final static UniqueString S_subexpression = UniqueString.uniqueStringOf("$Subexpression");
 
 	class Function {
 		/***********************************************************************
@@ -1811,13 +1800,10 @@ public class Generator implements ASTConstants, SyntaxTreeConstants, LevelConsta
 			Object substOb = substInPrefix.elementAt(temp - 1);
 			if (substOb instanceof SubstInNode) {
 				SubstInNode subst = (SubstInNode) substOb;
-				curExprNode = new SubstInNode(subst.stn, subst.getSubsts(), curExprNode, subst.getInstantiatingModule(),
-						subst.getInstantiatedModule());
+				curExprNode = new SubstInNode(subst, curExprNode);
 			} else {
 				APSubstInNode subst = (APSubstInNode) substOb;
-				curExprNode = new SubstInNode(subst.stn, subst.getSubsts(), curExprNode, subst.getInstantiatingModule(),
-						subst.getInstantiatedModule());
-
+				curExprNode = new SubstInNode(subst, curExprNode);
 			}
 			temp = temp - 1;
 		}
@@ -3626,7 +3612,7 @@ public class Generator implements ASTConstants, SyntaxTreeConstants, LevelConsta
 
 		// then return new node.
 		// which variety? look under first child.
-		boolean isExists = children[0].getUS().equals(S_e) || children[0].getUS().equals(S_ex);
+		boolean isExists = children[0].isKind(TLAplusParserConstants.EXISTS);
 		if (isExists) {
 			return new OpApplNode(OP_be, null, semanticNode, odna, bt, ea, treeNode, cm);
 		} else {
@@ -3637,34 +3623,35 @@ public class Generator implements ASTConstants, SyntaxTreeConstants, LevelConsta
 	private final ExprNode processUnboundQuant(TreeNode treeNode, TreeNode[] children, ModuleNode cm)
 			throws AbortException {
 		// which variety? look under first child.
-		UniqueString us = children[0].getUS();
+		int kind = children[0].getKind();
 		UniqueString r_us;
-		int level;
-
-		if (us.equals(S_e)) {
-			r_us = OP_ue;
-			level = 0;
-		} // \E
-		else if (us.equals(S_ex)) {
-			r_us = OP_ue;
-			level = 0;
-		} // \exists
-		else if (us.equals(S_f)) {
-			r_us = OP_uf;
-			level = 0;
-		} // \A
-		else if (us.equals(S_fx)) {
-			r_us = OP_uf;
-			level = 0;
-		} // \always
-		else if (us.equals(S_te)) {
-			r_us = OP_te;
-			level = 1;
-		} // \EE
-		else {
-			r_us = OP_tf;
-			level = 1;
-		} // \AA
+		switch (kind) {
+			case TLAplusParserConstants.EXISTS: {
+				r_us = OP_ue;
+				break;
+			}
+			case TLAplusParserConstants.FORALL: {
+				r_us = OP_uf;
+				break;
+			}
+			case TLAplusParserConstants.T_EXISTS: {
+				r_us = OP_te;
+				break;
+			}
+			case TLAplusParserConstants.T_FORALL: {
+				r_us = OP_tf;
+				break;
+			}
+			default: {
+				throw new IllegalArgumentException(
+					String.format(
+						"Unknown unbound quantifier kind %d: %s",
+						kind,
+						children[0].getImage()
+					)
+				);
+			}
+		}
 
 		// Process all identifiers bound by thus quantifier
 		int length = (children.length - 2) / 2;
@@ -3840,15 +3827,30 @@ public class Generator implements ASTConstants, SyntaxTreeConstants, LevelConsta
 	}
 
 	private final ExprNode processAction(TreeNode treeNode, TreeNode children[], ModuleNode cm) throws AbortException {
-		UniqueString match = children[0].getUS();
-		if (match.equals(S_a))
-			match = OP_aa;
-		else if (match.equals(S_brack))
-			match = OP_sa;
-		else if (match.equals(S_sf))
-			match = OP_sf;
-		else if (match.equals(S_wf))
-			match = OP_wf;
+		UniqueString match;
+		switch (children[0].getKind()) {
+			case TLAplusParserConstants.LAB: { // <<expr>>_vars
+				match = OP_aa;
+				break;
+			} case TLAplusParserConstants.LSB: { // [expr]_vars
+				match = OP_sa;
+				break;
+			} case TLAplusParserConstants.SF: { // SF_vars(expr)
+				match = OP_sf;
+				break;
+			} case TLAplusParserConstants.WF: { // WF_vars(expr)
+				match = OP_wf;
+				break;
+			} default: {
+				throw new IllegalArgumentException(
+					String.format(
+						"Unknown action formula kind %d: %s",
+						children[0].getKind(),
+						children[0].getImage()
+					)
+				);
+			}
+		}
 
 		ExprNode ops[] = new ExprNode[2];
 		ops[0] = generateExpression(children[1], cm);
@@ -3891,7 +3893,7 @@ public class Generator implements ASTConstants, SyntaxTreeConstants, LevelConsta
 				// the heirs of an ExceptComponent
 				TreeNode subSyntaxTreeNode[] = syntaxTreeNode[1 + excCompIx].heirs();
 
-				if (subSyntaxTreeNode[0].getUS().equals(S_brack)) {
+				if (subSyntaxTreeNode[0].isKind(TLAplusParserConstants.LSB)) {
 					// The first heir is "[" , indicates one or more fcn args;
 					// add expressions as function args
 					if (subSyntaxTreeNode.length > 3) {
@@ -4538,7 +4540,7 @@ public class Generator implements ASTConstants, SyntaxTreeConstants, LevelConsta
 						// Create the "wrapping" SubstInNode as a clone of "subst"
 						// above, but with a body from the OpDefNode in the module
 						// being instantiated
-						SubstInNode substInNode = new SubstInNode(treeNode, substIn.getSubsts(), odn.getBody(), cm,
+						SubstInNode substInNode = new SubstInNode(treeNode, substIn, odn.getBody(), cm,
 								instanceeModule);
 
 						// MAK 02/2021: Store the individual segments of the compound id to not rely on
@@ -4626,7 +4628,7 @@ public class Generator implements ASTConstants, SyntaxTreeConstants, LevelConsta
 					// Create the "wrapping" SubstInNode as a clone of "subst"
 					// above, but with a body from the ThmOrAssumpDefNode in the module
 					// being instantiated
-					APSubstInNode substInNode = new APSubstInNode(treeNode, substIn.getSubsts(), taOdn.getBody(), cm,
+					APSubstInNode substInNode = new APSubstInNode(treeNode, substIn, taOdn.getBody(), cm,
 							instanceeModule);
 
 					// Create the ThmOrAssumpDefNode for the new instance of this
@@ -4871,7 +4873,7 @@ public class Generator implements ASTConstants, SyntaxTreeConstants, LevelConsta
 		// Create a vector of all declarations of CONSTANTS and VARIABLES
 		// in the context of the module being instantiated (instancee).
 		// These are all the symbols that must have substitutions defined
-		// for them in the instantiation, either explictly or implicitly.
+		// for them in the instantiation, either explicitly or implicitly.
 		Vector decls = instanceeCtxt.getByClass(OpDeclNode.class);
 
 		// Create a SubstInNode to be used as a template for the SubstInNodes
@@ -5083,7 +5085,7 @@ public class Generator implements ASTConstants, SyntaxTreeConstants, LevelConsta
 					// Create the "wrapping" SubstInNode as a clone of "subst" above,
 					// but with a body from the OpDefNode in the module being
 					// instantiated
-					substInTemplate = new SubstInNode(treeNode, subst.getSubsts(), odn.getBody(), cm,
+					substInTemplate = new SubstInNode(treeNode, subst, odn.getBody(), cm,
 							instanceeModuleNode);
 					newOdn = new OpDefNode(odn.getName(), UserDefinedOpKind, odn.getParams(), localness,
 							substInTemplate, cm, symbolTable, treeNode, true, odn.getSource());
@@ -5178,7 +5180,7 @@ public class Generator implements ASTConstants, SyntaxTreeConstants, LevelConsta
 					// Create the "wrapping" SubstInNode as a clone of "subst" above,
 					// but with a body from the ThmOrAssumpDefNode in the module being
 					// instantiated
-					tasubstInTemplate = new APSubstInNode(treeNode, subst.getSubsts(), tadn.getBody(), cm,
+					tasubstInTemplate = new APSubstInNode(treeNode, subst, tadn.getBody(), cm,
 							instanceeModuleNode);
 					newTadn = new ThmOrAssumpDefNode(tadn.getName(), tadn.isTheorem(), tasubstInTemplate, cm,
 							symbolTable, treeNode, tadn.getParams(), instanceeModuleNode, tadn.getSource());

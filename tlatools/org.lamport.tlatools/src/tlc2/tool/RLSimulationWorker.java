@@ -27,6 +27,7 @@ package tlc2.tool;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.atomic.AtomicLong;
@@ -46,6 +47,7 @@ public class RLSimulationWorker extends SimulationWorker {
 	// Gamma = Discount factor
 	protected static final double GAMMA = Double.valueOf(System.getProperty(Simulator.class.getName() + ".rl.gamma", ".7d"));
 	protected static final double REWARD = Double.valueOf(System.getProperty(Simulator.class.getName() + ".rl.reward", "-10d"));
+	protected static final boolean ENABLED_ONLY = Boolean.getBoolean(Simulator.class.getName() + ".rl.enabledOnly");
 
 	protected final Map<Action, Map<Long, Double>> q = new HashMap<>();
 
@@ -66,13 +68,12 @@ public class RLSimulationWorker extends SimulationWorker {
 		}
 	}
 	
-	protected double getReward(final long fp, final Action a) {
+	protected double getReward(final TLCState s, final Action a, final TLCState t) {
 		// The reward is negative to force RL to find alternative solutions instead of
 		// finding the best (one) solution over again. For example, in a maze, RL would
 		// be rewarded +1 if it makes it to the exit. Here, we want to find other paths
 		// elsewhere.
-		return REWARD;
-		// TODO Experiment with other rewards. 
+		return tool.evalReward(s, t, REWARD);
 	}
 	
 	private final double getMaxQ(final long fp) {
@@ -91,8 +92,10 @@ public class RLSimulationWorker extends SimulationWorker {
 	
 	@Override
 	protected int getNextActionAltIndex(final int index, final int p, final Action[] actions, final TLCState curState) {
-		// Action at state is not enabled.
-		this.q.get(actions[index]).put(getHash(curState), -Double.MAX_VALUE);
+		if (!ENABLED_ONLY) {
+			// Action at state is not enabled.
+			this.q.get(actions[index]).put(getHash(curState), -Double.MAX_VALUE);
+		}
 		return super.getNextActionAltIndex(index, p, actions, curState);
 	}
 	
@@ -156,13 +159,30 @@ public class RLSimulationWorker extends SimulationWorker {
 			final Action ai = s.getAction();
 			
 			final double qi = this.q.get(ai).get(fp);
-			final double q = ((1d - ALPHA) * qi) + (ALPHA * (getReward(fp, ai) + (GAMMA * maxQ)));
+			final double r = getReward(p, ai, s);
+			final double q = ((1d - ALPHA) * qi) + (ALPHA * (r + (GAMMA * maxQ)));
 			
 			this.q.get(ai).put(fp, q);
 			
 			s = p;
 		}
 		return true;
+	}
+
+	@Override
+	protected Action[] filterActions(final Action[] actions, final TLCState curState) throws SimulationWorkerError {
+		if (ENABLED_ONLY) {
+			// Crude: Evaluate all actions and keep the enabled ones.
+			final List<Action> l = new ArrayList<>();
+			for (int i = 0; i < actions.length; i++) {
+				final StateVec ns = this.tool.getNextStates(actions[i], curState);
+				if (!ns.empty()) {
+					l.add(actions[i]);
+				}
+			}
+			return l.toArray(Action[]::new);
+		}
+		return super.filterActions(actions, curState);
 	}
 	
 	private static class Pair implements Comparable<Pair> {

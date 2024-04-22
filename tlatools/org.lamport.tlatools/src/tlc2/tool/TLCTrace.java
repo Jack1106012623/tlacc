@@ -223,7 +223,6 @@ public class TLCTrace {
 					state = this.tool.getState(fp, predecessor.state);
 
 					// chain to predecessor
-					state.predecessorState = predecessor;
 					state.stateNumber = location / 12;
 
 					// store in map
@@ -365,7 +364,7 @@ public class TLCTrace {
 				
 				// Print successor state.
 				StatePrinter.printInvariantViolationStateTraceState(
-						this.tool.evalAlias(state, s2, prefix), s1, 2);
+						this.tool.evalAlias(state, s2, prefix), s1, 2, true);
 			}
 			return;
 		}
@@ -399,6 +398,7 @@ public class TLCTrace {
 		} else {
 			final int j = prefix.length - 1;
 			TLCStateInfo s0 = prefix[j];
+			s1.setPredecessor(s0);
 			StatePrinter.printInvariantViolationStateTraceState(
 					this.tool.evalAlias(s0, s1, prefix), lastState, ++idx);
 			
@@ -415,8 +415,8 @@ public class TLCTrace {
 		if (s2 == null) {
 			lastState = null;
 		}
-		sinfo = this.tool.evalAlias(sinfo, s2 == null ? sinfo.state : s2, prefix, sinfo);
-		StatePrinter.printInvariantViolationStateTraceState(sinfo, lastState, ++idx);
+		StatePrinter.printInvariantViolationStateTraceState(
+				this.tool.evalAlias(sinfo, s2 == null ? sinfo.state : s2, prefix, sinfo), lastState, ++idx, s2 == null);
 		lastState = sinfo.state;
 
 		// Print s2:
@@ -433,7 +433,7 @@ public class TLCTrace {
 			sinfo.state.uid = s2.uid;
 			sinfo.state.workerId = s2.workerId;
 			sinfo = this.tool.evalAlias(sinfo, s2, prefix, si1, sinfo);
-			StatePrinter.printInvariantViolationStateTraceState(sinfo, null, ++idx);
+			StatePrinter.printInvariantViolationStateTraceState(sinfo, null, ++idx, true);
 		}
 	}
 

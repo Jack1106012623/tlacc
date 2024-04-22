@@ -4,7 +4,13 @@
 package tlc2.tool;
 
 import java.io.Serializable;
+import java.util.Arrays;
+import java.util.Map;
+import java.util.StringJoiner;
+import java.util.stream.Collector;
+import java.util.stream.Collectors;
 
+import tla2sany.semantic.FormalParamNode;
 import tla2sany.semantic.OpDefNode;
 import tla2sany.semantic.SemanticNode;
 import tla2sany.st.Location;
@@ -12,9 +18,18 @@ import tla2sany.st.SyntaxTreeConstants;
 import tla2sany.st.TreeNode;
 import tlc2.tool.coverage.CostModel;
 import tlc2.util.Context;
+import tlc2.value.impl.Value;
 import util.UniqueString;
 
 public final class Action implements ToolGlobals, Serializable {
+
+	// If S # {} join the the elements in S by "," and nest the output in ( and ).
+	// Equals the empty string if S = {}.
+	// Example: (a, b, 42, fizzbuzz)
+	private static final Collector<CharSequence, StringJoiner, String> PARAMETER_LIST = Collector.of(
+			() -> new StringJoiner(",", "(", ")").setEmptyValue(""), StringJoiner::add, StringJoiner::merge,
+			StringJoiner::toString);
+	
 	private static final UniqueString UNNAMED_ACTION = UniqueString.uniqueStringOf("UnnamedAction");
 
 	public static final Action UNKNOWN = new Action(SemanticNode.nullSN, Context.Empty, UNNAMED_ACTION, false, false);
@@ -52,11 +67,19 @@ public final class Action implements ToolGlobals, Serializable {
 	  this(pred, con, opDef, false, false);
   }
 
+  public Action(ITool t, SemanticNode pred, Context con, OpDefNode opDef) {
+	  this(t, pred, con, opDef, false, false);
+  }
+
   public Action(SemanticNode pred, Context con, OpDefNode opDef, boolean isInitPred, final boolean isInternal) {
 	  this(pred, con, opDef != null ? opDef.getName() : UNNAMED_ACTION, isInitPred, isInternal);
 	  // opDef null when action not declared, i.e. Spec == x = 0 /\ ...
 	  // See test64 and test64a and others.
 	  this.opDef = opDef;
+  }
+
+  public Action(ITool t, SemanticNode pred, Context con, OpDefNode opDef, boolean isInitPred, final boolean isInternal) {
+	  this(pred, con, opDef, isInitPred, isInternal);
   }
 
 /* Returns a string representation of this action.  */
@@ -74,7 +97,11 @@ public final class Action implements ToolGlobals, Serializable {
   }
   
   public final String getLocation(final String actionName) {
-      return "<" + actionName + " " +  pred.getLocation() + ">";
+	return String.format("<%s%s %s>", actionName,
+			Arrays.stream(opDef != null ? opDef.getParams() : new FormalParamNode[0]).map(p -> con.lookup(p))
+					.filter(o -> o != null).map(Object::toString)
+					.collect(PARAMETER_LIST),
+			pred.getLocation());
   }
   
   public final boolean isNamed() {
@@ -132,6 +159,12 @@ public final class Action implements ToolGlobals, Serializable {
 	public final Location getDefinition() {
 	   return pred.getLocation();
 	}
+	
+	public final Map<UniqueString, Value> getParameters() {
+		return Arrays.stream(opDef != null ? opDef.getParams() : new FormalParamNode[0])
+				.filter(p -> con.lookup(p) instanceof Value)
+				.collect(Collectors.toMap(FormalParamNode::getName, p -> (Value) con.lookup(p)));
+    }
 
 	public void setId(int id) {
 		this.id = id;

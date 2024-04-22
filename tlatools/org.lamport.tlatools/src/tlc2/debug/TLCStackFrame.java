@@ -55,6 +55,7 @@ import tla2sany.parser.SyntaxTreeNode;
 import tla2sany.semantic.ExprOrOpArgNode;
 import tla2sany.semantic.ModuleNode;
 import tla2sany.semantic.NumeralNode;
+import tla2sany.semantic.OpApplNode;
 import tla2sany.semantic.OpDeclNode;
 import tla2sany.semantic.OpDefNode;
 import tla2sany.semantic.OpDefOrDeclNode;
@@ -124,6 +125,9 @@ public class TLCStackFrame extends StackFrame {
 
 	public TLCStackFrame(TLCStackFrame parent, SemanticNode node, Context ctxt, Tool tool, RuntimeException e) {
 		this.parent = parent;
+		// This frame may share the node, ctxt, and tool with its parent. For example, a
+		// TLCStateStackFrame and its parent TLCStateStackFrame may differ only in the
+		// TLCState.
 		this.tool = tool;
 		Assert.check(this.tool != null, EC.GENERAL);
 		
@@ -154,6 +158,8 @@ public class TLCStackFrame extends StackFrame {
 		} else {
 			setName(node.getHumanReadableImage());
 		}
+//		setName(parent == null ? "0" : parent.getLevel() + 1 + ":" + node.stn.getLevel() + " " + getName());
+		
 		// There is a 1:n mapping between SemanticNode and TLCStackFrames. For example,
 		// the same SN appears multiple times on the stack in case of recursion. Thus,
 		// node.myUID doesn't suffice as a frame's id, which - by definition - has to
@@ -176,6 +182,13 @@ public class TLCStackFrame extends StackFrame {
 		
 		this.ctxtId = rnd.nextInt(Integer.MAX_VALUE - 1) + 1;
 	}
+	
+//	private int getLevel() {
+//		if (parent == null) {
+//			return 0;
+//		}
+//		return parent.getLevel() + 1;
+//	}
 
 	public TLCStackFrame(TLCStackFrame parent, SemanticNode node, Context ctxt, final Tool tool) {
 		this(parent, node, ctxt, tool, null);
@@ -402,7 +415,12 @@ public class TLCStackFrame extends StackFrame {
 		if (sn instanceof SymbolNode) {
 			o = tool.lookup((SymbolNode) sn, this.ctxt, false);
 		} else if (sn instanceof ExprOrOpArgNode) {
-			o = tool.getVal((ExprOrOpArgNode) sn, ctxt, false);
+			o = tool.getVal(
+					// Find the first OpApplNode in the path.  For example, this shows the
+					// value of a RecordValue, i.e., the value  42  of the the record
+					// [ foo |-> 42, bar |-> "abc" ].  Without it, the debugger just shows "foo".
+					(ExprOrOpArgNode) path.stream().filter(seg -> seg instanceof OpApplNode).findFirst().orElse(sn),
+					ctxt, false);
 		} else {
 			o = sn;
 		}
@@ -410,7 +428,7 @@ public class TLCStackFrame extends StackFrame {
 		if (o instanceof LazyValue) {
 			// Unlazying might fail if the lazy value is not within the scope of this frame.
 			// In this case, fall-back to sn.
-			o = unlazy((LazyValue) o, o);
+			o = unlazy((LazyValue) o, sn);
 		}
 		
 		final Variable variable;
@@ -642,6 +660,25 @@ public class TLCStackFrame extends StackFrame {
 			eventArguments.setText(this.exception.getMessage().replaceAll("(?m)^@!@!@.*", ""));
 		}
 		return eventArguments;
+	}
+
+	public boolean matches(final TLCStackFrame f) {
+		// Both frames have to be at the same *syntax* level and be part of the same operator definition:
+		// 
+		// Bar ==
+		//     /\ K1:: "SomeExpressionOfBarWithLevelM"
+		// 
+		// Foo ==
+		//     /\ L1:: "SomeExpressionOfFooWithLevelM'
+		//     /\ L2:: n' = Bar  \* Less than level M
+		//     /\ L3:: "SomeExpressionOfFooWithLevelM'
+		//
+		// Stepping over L1 should not take us to K1 but L3.
+		if (node.getTreeNode().getLevel() == f.node.getTreeNode().getLevel()) {
+			return SyntaxTreeNode.getOperatorDefinition(node.getTreeNode()) == SyntaxTreeNode
+					.getOperatorDefinition(f.node.getTreeNode());
+		}
+		return false;
 	}
 
 	public boolean matches(final TLCSourceBreakpoint bp) {

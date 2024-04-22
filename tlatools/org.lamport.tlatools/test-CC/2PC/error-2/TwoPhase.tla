@@ -87,8 +87,7 @@ TMCommit ==
   (* state and every RM has sent a $"Prepared"$ message.                   *)
   (*************************************************************************)
   /\ tmState = "init"
-\*   /\ \A rm \in RM: rmState[rm] # "working"
-\*   /\ tmPrepared =  RM
+\*   /\ tmPrepared = RM
   /\ tmState' = "committed"
   /\ msgs' = msgs \cup {[type |-> "Commit"]}
   /\ UNCHANGED <<rmState, tmPrepared>>
@@ -191,7 +190,10 @@ CCTPNext ==
         \/ RMPrepareOrAbort(rm)
         \/ TMRcvPrepared(rm)
         \/ RMRcvCommitOrAbortMsg(rm)
-
+TPConsistent == /\ tmState = "committed" => \A rm \in RM: rmState[rm] # "aborted"
+                /\ tmState = "aborted" => \A rm \in RM: rmState[rm] # "committed"
+                /\ \A rm1, rm2 \in RM : ~ /\ rmState[rm1] = "aborted"
+                                          /\ rmState[rm2] = "committed"
 TCTypeOK == TC!TCTypeOK
 TCConsistent == TC!TCConsistent
 

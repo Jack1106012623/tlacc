@@ -485,7 +485,23 @@ public class DebugTool extends Tool {
 			throw e;
 		}		
 	}
-	
+
+    @Override
+	protected TLCState processUnsatisfied(final TLCState state, final SemanticNode pred, final Context c, final IStateFunctor states, final CostModel cm) {
+    	target.pushUnsatisfiedFrame(this, pred, c, state);
+    	target.popFrame(this, pred, c, state);
+		return states.addUnsatisfiedState(state, pred, c);
+    }
+
+    @Override
+	protected TLCState processUnsatisfied(final TLCState curState, final Action action, final TLCState succState,
+			final SemanticNode pred, final Context c, final INextStateFunctor nss, final CostModel cm) {
+    	succState.setAction(action).setPredecessor(curState);
+    	target.pushUnsatisfiedFrame(this, pred, c, curState, action, succState);
+    	target.popFrame(this, pred, c, curState, succState);
+		return nss.addUnsatisfiedState(curState, action, succState, pred, c);
+	}
+
     @Override
 	protected void getInitStates(SemanticNode init, ActionItemList acts, Context c, TLCState ps, IStateFunctor states,
 			CostModel cm) {
@@ -657,6 +673,17 @@ public class DebugTool extends Tool {
 		public SetOfStates getStates() {
 			return functor.getStates();
 		}
+
+		@Override
+		public TLCState addUnsatisfiedState(TLCState curState, Action action, TLCState succState, SemanticNode pred,
+				Context c) {
+			return this.functor.addUnsatisfiedState(curState, action, succState, pred, c);
+		}
+
+		@Override
+		public TLCState addUnsatisfiedState(TLCState state, SemanticNode pred, Context c) {
+			return this.functor.addUnsatisfiedState(state, pred, c);
+		}
 	}
 
 	@Override
@@ -680,7 +707,7 @@ public class DebugTool extends Tool {
 	}
 
 	@Override
-	public ITool getLiveness() {
+	public ITool noDebug() {
 		return this.fastTool;
 	}
 }

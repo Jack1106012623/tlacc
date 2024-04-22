@@ -33,7 +33,7 @@ package tlc2.tool;
  * later use and ModelChecker.DoInitFunctor which checks each state right
  * away.
  */
-public interface IStateFunctor {
+public interface IStateFunctor extends INotInModelFunctor {
 
 	Object addElement(TLCState state);
 

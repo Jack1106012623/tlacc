@@ -173,4 +173,31 @@ THEOREM TPSpec => TC!TCSpec
 (* RMs, a configuration with 50816 reachable states, in a little over a    *)
 (* minute on a 1 GHz PC.                                                   *)
 (***************************************************************************)
+
+\* CC actions and invariants
+TMCommitOrAbort == /\ \/ TMCommit 
+                      \/ TMAbort
+
+RMPrepareOrAbort(rm) == /\ \/ RMPrepare(rm) 
+                           \/ RMChooseToAbort(rm)
+
+RMRcvCommitOrAbortMsg(rm) == /\ \/ RMRcvCommitMsg(rm) 
+                                \/ RMRcvAbortMsg(rm)
+
+CCTPNext ==
+  \/ TMCommitOrAbort
+  \/ \E rm \in RM : 
+        \/ RMPrepareOrAbort(rm)
+        \/ TMRcvPrepared(rm)
+        \/ RMRcvCommitOrAbortMsg(rm)
+
+TPConsistent == /\ tmState = "committed" => \A rm \in RM: rmState[rm] # "aborted"
+                /\ tmState = "aborted" => \A rm \in RM: rmState[rm] # "committed"
+                /\ \A rm1, rm2 \in RM : ~ /\ rmState[rm1] = "aborted"
+                                          /\ rmState[rm2] = "committed"
+                                          
+
+TCTypeOK == TC!TCTypeOK
+TCConsistent == TC!TCConsistent
+
 =============================================================================

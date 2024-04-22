@@ -1,5 +1,6 @@
 // Copyright (c) 2003 Compaq Corporation.  All rights reserved.
 // Portions Copyright (c) 2003 Microsoft Corporation.  All rights reserved.
+// Copyright (c) 2023, Oracle and/or its affiliates.
 // Last modified on Wed 12 Jul 2017 at 16:10:00 PST by ian morris nieves
 //      modified on Sat 23 February 2008 at 10:15:47 PST by lamport
 //      modified on Fri Aug 10 15:09:07 PDT 2001 by yuanyu
@@ -26,7 +27,6 @@ import tlc2.tool.StateVec;
 import tlc2.tool.TLCState;
 import tlc2.tool.TLCStateInfo;
 import tlc2.tool.coverage.CostModel;
-import tlc2.util.Context;
 import tlc2.util.FP64;
 import tlc2.value.IMVPerm;
 import tlc2.value.IValue;
@@ -38,7 +38,7 @@ import util.Assert;
 import util.TLAConstants;
 import util.UniqueString;
 
-public class RecordValue extends Value implements Applicable {
+public class RecordValue extends Value implements FunctionValue {
   private static final UniqueString BLI = UniqueString.of("beginLine");
   private static final UniqueString BCOL = UniqueString.of("beginColumn");
   private static final UniqueString ELI = UniqueString.of("endLine");
@@ -112,10 +112,48 @@ public class RecordValue extends Value implements Applicable {
 		
 		this.isNorm = false;
   }
+  
+  public RecordValue(final OpDeclNode odn) {
+	  	this.names = new UniqueString[2];
+    	this.values = new Value[this.names.length];
+    	
+		this.names[0] = NAME;
+		this.values[0] = new StringValue(odn.getName());
+		
+		this.names[1] = LOC;
+		this.values[1] = new RecordValue(odn.getLocation());
+    	
+		this.isNorm = false;
+  }
+  
+  public RecordValue(final OpDeclNode odn, final UniqueString u, final Value v) {
+	  	this.names = new UniqueString[3];
+    	this.values = new Value[this.names.length];
+    	
+		this.names[0] = NAME;
+		this.values[0] = new StringValue(odn.getName());
+		
+		this.names[1] = LOC;
+		this.values[1] = new RecordValue(odn.getLocation());
+
+		this.names[2] = u;
+		this.values[2] = v;
+
+		this.isNorm = false;
+  }
 
   public RecordValue(final Action action) {
-		this.names = new UniqueString[2];
-		this.values = new Value[this.names.length];
+	    final Map<UniqueString, Value> parameters = action.getParameters();    
+	    if (parameters.isEmpty()) {
+	    	this.names = new UniqueString[2];
+	    	this.values = new Value[this.names.length];
+	    } else {
+	    	this.names = new UniqueString[3];	    	
+	    	this.values = new Value[this.names.length];
+	    	
+	    	this.names[2] = CTXT;
+	    	this.values[2] = new RecordValue(parameters);
+	    }
 
 		this.names[0] = NAME;
 		this.values[0] = new StringValue(action.getName());
@@ -126,18 +164,24 @@ public class RecordValue extends Value implements Applicable {
 		this.isNorm = false;
   }
 
-  public RecordValue(final Action action, final Context ctxt) {
-		this.names = new UniqueString[3];
+  public RecordValue(final Action action, final UniqueString u, final Value v) {
+		final Map<UniqueString, Value> parameters = action.getParameters();
+		this.names = new UniqueString[parameters.isEmpty() ? 3 : 4];
 		this.values = new Value[this.names.length];
 
 		this.names[0] = NAME;
 		this.values[0] = new StringValue(action.getName());
-		
+
 		this.names[1] = LOC;
 		this.values[1] = new RecordValue(action.getDefinition());
-		
-		this.names[2] = CTXT;
-		this.values[2] = new RecordValue(ctxt.toMap());
+
+		this.names[2] = u;
+		this.values[2] = v;
+
+		if (!parameters.isEmpty()) {
+			this.names[3] = CTXT;
+			this.values[3] = new RecordValue(parameters);
+		}
 		
 		this.isNorm = false;
   }
@@ -168,7 +212,7 @@ public class RecordValue extends Value implements Applicable {
 
 		//TODO: _action too verbose?
 		this.names[0] = ACTION;
-		this.values[0] = new RecordValue(action, action.con);
+		this.values[0] = new RecordValue(action);
 		
 		for (int i = 0; i < vars.length; i++) {
 			this.names[i+1] = vars[i].getName();
@@ -756,6 +800,12 @@ public class RecordValue extends Value implements Applicable {
 	}
 
 	public TLCState toState() {
+		// rcd can be a superset or subset of the spec's variables, which is why we
+		// cannot simply redefine the values of the state created from
+		// TLCState.Empty.createEmpty(). If would be more elegant to add new
+		// functionality to TLCStateMut. However, the class is final and we should
+		// generally not add additional fields for performance reasons. Thus, create a
+		// nested TLCStateMut or TLCStateMutExt to correctly handle fingerprinting, ....
 			final TLCState state = TLCState.Empty.createEmpty();
 			final OpDeclNode[] vars = state.getVars();
 			for (int i = 0; i < vars.length; i++) {
@@ -770,8 +820,9 @@ public class RecordValue extends Value implements Applicable {
 			return new PrintTLCState(this, state);
 		}
 
-		private static final class PrintTLCState extends TLCState {
+		public static final class PrintTLCState extends TLCState {
 
+			private static final UniqueString _FORMAT = UniqueString.of("_format");
 			private final RecordValue rcd;
 			private final TLCState state;
 
@@ -783,22 +834,30 @@ public class RecordValue extends Value implements Applicable {
 			@Override
 			public String toString() {
 				final StringBuffer result = new StringBuffer();
-				int vlen = rcd.names.length;
-				if (vlen == 1) {
-					result.append(rcd.names[0].toString());
-					result.append(" = ");
-					result.append(Values.ppr(rcd.values[0]));
-					result.append("\n");
+				final int vlen = rcd.names.length;
+				
+				final int idx = Arrays.asList(rcd.names).indexOf(_FORMAT);
+
+				final String format;
+				if (idx > -1) {
+					format = ((StringValue) rcd.values[idx]).val.toString();
 				} else {
-					for (int i = 0; i < vlen; i++) {
-						UniqueString key = rcd.names[i];
-						result.append("/\\ ");
-						result.append(key.toString());
-						result.append(" = ");
-						result.append(Values.ppr(rcd.values[i]));
-						result.append("\n");
+					if (vlen == 1) {
+						format = "%s = %s\n";
+					} else {
+						format = "/\\ %s = %s\n";
 					}
 				}
+				
+				for (int i = 0; i < vlen; i++) {
+					if (i == idx) {
+						continue;
+					}
+					final String key = rcd.names[i].toString();
+					final String value = Values.ppr(rcd.values[i]);
+					result.append(String.format(format, key, value));
+				}
+
 				return result.toString();
 			}
 
@@ -824,7 +883,12 @@ public class RecordValue extends Value implements Applicable {
 
 			@Override
 			public String toString(TLCState lastState) {
-				return this.state.toString(lastState);
+				return this.state.toString(this.rcd.names, lastState);
+			}
+
+			@Override
+			public String toString(UniqueString[] vars, TLCState lastState) {
+				return this.state.toString(vars, lastState);
 			}
 
 			@Override
@@ -844,12 +908,23 @@ public class RecordValue extends Value implements Applicable {
 
 			@Override
 			public IValue lookup(UniqueString var) {
-				return this.state.lookup(var);
+				if (this.state.containsKey(var)) {
+					return this.state.lookup(var);
+				}
+				return this.rcd.select(new StringValue(var));
 			}
 
 			@Override
 			public boolean containsKey(UniqueString var) {
-				return this.state.containsKey(var);
+				if (this.state.containsKey(var)) {
+					return true;
+				}
+				for (int i = 0; i < this.rcd.names.length; i++) {
+					if (this.rcd.names[i] == var) {
+						return true;
+					}
+				}
+				return false;
 			}
 
 			@Override
@@ -880,6 +955,10 @@ public class RecordValue extends Value implements Applicable {
 			@Override
 			public TLCState createEmpty() {
 				return this.state.createEmpty();
+			}
+
+			public Value getRecord() {
+				return rcd;
 			}
 		}
 

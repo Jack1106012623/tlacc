@@ -33,10 +33,12 @@ import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.stream.Collectors;
 
 import org.eclipse.lsp4j.debug.Breakpoint;
 import org.eclipse.lsp4j.debug.Capabilities;
@@ -60,11 +62,13 @@ import org.eclipse.lsp4j.debug.ScopesResponse;
 import org.eclipse.lsp4j.debug.SetBreakpointsArguments;
 import org.eclipse.lsp4j.debug.SetBreakpointsResponse;
 import org.eclipse.lsp4j.debug.SetExceptionBreakpointsArguments;
+import org.eclipse.lsp4j.debug.SetExceptionBreakpointsResponse;
 import org.eclipse.lsp4j.debug.SetVariableArguments;
 import org.eclipse.lsp4j.debug.SetVariableResponse;
 import org.eclipse.lsp4j.debug.Source;
 import org.eclipse.lsp4j.debug.SourceBreakpoint;
 import org.eclipse.lsp4j.debug.StackFrame;
+import org.eclipse.lsp4j.debug.StackFramePresentationHint;
 import org.eclipse.lsp4j.debug.StackTraceArguments;
 import org.eclipse.lsp4j.debug.StackTraceResponse;
 import org.eclipse.lsp4j.debug.StepBackArguments;
@@ -92,6 +96,7 @@ import tlc2.tool.StatefulRuntimeException;
 import tlc2.tool.TLCState;
 import tlc2.tool.impl.DebugTool;
 import tlc2.tool.impl.Tool;
+import tlc2.tool.impl.Tool.Mode;
 import tlc2.util.Context;
 import tlc2.value.impl.Value;
 
@@ -107,12 +112,14 @@ public abstract class TLCDebugger extends AbstractDebugger implements IDebugTarg
 		this.step = Step.In;
 		this.haltExp = true;
 		this.haltInv = true;
+		this.haltUnsat = 0;
 	}
 
 	public TLCDebugger(final Step s, final boolean halt) {
 		this.step = s;
 		this.haltExp = halt;
 		this.haltInv = halt;
+		this.haltUnsat = halt ? 0 : Integer.MAX_VALUE;
 	}
 
 	/*
@@ -122,6 +129,7 @@ public abstract class TLCDebugger extends AbstractDebugger implements IDebugTarg
 		this.step = s;
 		this.haltExp = halt;
 		this.haltInv = halt;
+		this.haltUnsat = halt ? 0 : Integer.MAX_VALUE;
 		this.executionIsHalted = executionIsHalted;
 	}
 
@@ -134,13 +142,6 @@ public abstract class TLCDebugger extends AbstractDebugger implements IDebugTarg
 	@Override
 	public synchronized CompletableFuture<Capabilities> initialize(InitializeRequestArguments args) {
 		LOGGER.finer("initialize");
-
-		Executors.newSingleThreadExecutor().submit(() -> {
-			LOGGER.finer("initialize -> initialized");
-			// Signal the debugger that we are ready. It seem not relevant in what order the
-			// response below and the initialized signal arrive at the debugger.
-			launcher.getRemoteProxy().initialized();
-		});
 
 		// The capabilities define customizations how the debugger will interact with
 		// this debuggee. Declaring no capabilities causes the most simple protocol to
@@ -162,13 +163,13 @@ public abstract class TLCDebugger extends AbstractDebugger implements IDebugTarg
 		// Don't support more sophisticated configuration of exception breakpoint
 		// filters such as ignoring some exceptions. When TLC hits an exception, it
 		// terminates anyway.
-		capabilities.setSupportsExceptionOptions(false);
+		capabilities.setSupportsExceptionFilterOptions(true);
 		// Breakpoints:
 		capabilities.setSupportsHitConditionalBreakpoints(true);
 		// TODO: Log points and conditional (expression-based) breakpoints require to
 		// parse TLA+ expressions after the spec has been parsed, which is not supported
 		// by SANY.
-		capabilities.setSupportsConditionalBreakpoints(false);
+		capabilities.setSupportsConditionalBreakpoints(true);
 		capabilities.setSupportsLogPoints(false);
 		// TODO: Implement stepping back for model-checking and simulation/generation.
 		// Stepping back would be hugely useful especially because TLC's evaluation behavior might be 
@@ -251,29 +252,48 @@ public abstract class TLCDebugger extends AbstractDebugger implements IDebugTarg
 		filter.setDefault_(this.haltExp);
 		filter.setFilter("ExceptionBreakpointsFilter");
 		filter.setLabel("Halt (break) on exceptions");
+		filter.setDescription("TLC will halt when it encounters a silly expression");
 
-		if (TLCGlobals.mainChecker != null) {
+		final ExceptionBreakpointsFilter unsat = new ExceptionBreakpointsFilter();
+		unsat.setDefault_(this.haltUnsat != Integer.MAX_VALUE ? true : false);
+		unsat.setFilter("UnsatisfiedBreakpointsFilter");
+		unsat.setLabel("Halt (break) on unsatisfied");
+		unsat.setDescription("TLC will halt when a successor state does not satisfy the next-state relation.");
+		unsat.setSupportsCondition(true);
+
+		if (this.tool.getMode() == Mode.MC_DEBUG) {
 			// Halting on violations/invariants does not work with exhaustive search.
-			// See the following two git commit for why:
+			// See the following two git commits to find out why:
 			// e81e1e2b19b7a03f74d245cac009e84a0415e45d
 			// 42f251546ce99c19f1a7a44310816527a15ade2b
-			return new ExceptionBreakpointsFilter[] { filter };
+			return new ExceptionBreakpointsFilter[] { filter, unsat };
 		} else {
 			final ExceptionBreakpointsFilter violations = new ExceptionBreakpointsFilter();
 			violations.setDefault_(this.haltInv);
 			violations.setFilter("InvariantBreakpointsFilter");
 			violations.setLabel("Halt (break) on violations");
+			violations.setDescription("TLC will halt when an invariant is violated.");
 
-			return new ExceptionBreakpointsFilter[] { filter, violations };
+			return new ExceptionBreakpointsFilter[] { filter, unsat, violations };
 		}
 	}
 
 	@Override
-	public synchronized CompletableFuture<Void> setExceptionBreakpoints(SetExceptionBreakpointsArguments args) {
-		final List<String> asList = Arrays.asList(args.getFilters());
-		this.haltExp = asList.contains("ExceptionBreakpointsFilter");
-		this.haltInv = asList.contains("InvariantBreakpointsFilter");
-		return CompletableFuture.completedFuture(null);
+	public synchronized CompletableFuture<SetExceptionBreakpointsResponse> setExceptionBreakpoints(SetExceptionBreakpointsArguments args) {
+		final Set<String> asSet = Arrays.stream(args.getFilterOptions()).map(fo -> fo.getFilterId()).collect(Collectors.toSet());
+		this.haltExp = asSet.contains("ExceptionBreakpointsFilter");
+		this.haltInv = asSet.contains("InvariantBreakpointsFilter");
+
+		this.haltUnsat = Arrays.stream(args.getFilterOptions())
+				.filter(fo -> fo.getFilterId().equals("UnsatisfiedBreakpointsFilter")).mapToInt(fo -> {
+					try {
+						return Integer.parseInt(fo.getCondition());
+					} catch (NumberFormatException e) {
+						return 0;
+					}
+				}).findAny().orElse(Integer.MAX_VALUE);
+
+		return CompletableFuture.completedFuture(new SetExceptionBreakpointsResponse());
 	}
 
 	@Override
@@ -354,10 +374,11 @@ public abstract class TLCDebugger extends AbstractDebugger implements IDebugTarg
 		// "Unlock" evaluation, i.e. set step to Continue and clear all breakpoints.
 		// Afterwards, resume TLC in case it's waiting for the debugger too.
 		breakpoints.clear();
-		targetLevel = -1;
+		sourceFrame = null;
 		step = Step.Continue;
 		haltExp = false;
 		haltInv = false;
+		haltUnsat = Integer.MAX_VALUE;
 		this.notify();
 		
 		return CompletableFuture.completedFuture(null);
@@ -437,6 +458,17 @@ public abstract class TLCDebugger extends AbstractDebugger implements IDebugTarg
 					// see tlc2.debug.TLCStepActionStackFrame.matches(TLCSourceBreakpoint)
 					breakpoint.setVerified(false);
 					breakpoint.setMessage("A Next breakpoint does not support a hit condition.");
+				}
+				
+				if (moduleNode != null && sbp.getCondition() != null && !sbp.getCondition().isEmpty()) {
+					// see tlc2.debug.TLCStateStackFrame.matches(TLCSourceBreakpoint)
+					final OpDefNode odn = moduleNode.getOpDef(sbp.getCondition());
+					if (odn == null) {
+						breakpoint.setVerified(false);
+						breakpoint.setMessage(String.format(
+								"The  %s  definition, used as the breakpoint expression, could not be found in the specification  %s.",
+								sbp.getCondition(), module));
+					}
 				}
 				
 				final Source source = args.getSource();
@@ -544,7 +576,7 @@ public abstract class TLCDebugger extends AbstractDebugger implements IDebugTarg
 			return this.stack.peek().continue_(this);
 		}
 
-		targetLevel = -1;
+		sourceFrame = null;
 		step = Step.Continue;
 		this.notify();
 		return CompletableFuture.completedFuture(new ContinueResponse());
@@ -558,7 +590,7 @@ public abstract class TLCDebugger extends AbstractDebugger implements IDebugTarg
 			return this.stack.peek().stepOver(this);
 		}
 
-		targetLevel = this.stack.size();
+		sourceFrame = this.stack.peek();
 		step = Step.Over;
 		this.notify();
 		return CompletableFuture.completedFuture(null);
@@ -571,9 +603,7 @@ public abstract class TLCDebugger extends AbstractDebugger implements IDebugTarg
 		if (!stack.isEmpty() && stack.peek().handle(this)) {
 			return this.stack.peek().stepIn(this);
 		}
-		// matches(..) below does not take targetLevel into account, thus not changing
-		// it here. The reason is that it is surprising if step.in on a leaf-frame
-		// would amount to resume/continue.
+
 		step = Step.In;
 		this.notify();
 		return CompletableFuture.completedFuture(null);
@@ -583,12 +613,14 @@ public abstract class TLCDebugger extends AbstractDebugger implements IDebugTarg
 	public synchronized CompletableFuture<Void> stepOut(StepOutArguments args) {
 		LOGGER.finer("stepOut");
 
-		if (!stack.isEmpty() && stack.peek().handle(this)) {
-			return this.stack.peek().stepOut(this);
+		if (!stack.isEmpty()) {
+			if (stack.peek().handle(this)) {
+				return this.stack.peek().stepOut(this);
+			}
+			sourceFrame = stack.peek().parent;
+			step = Step.Out;
 		}
 		
-		targetLevel = this.stack.size();
-		step = Step.Out;
 		this.notify();
 		return CompletableFuture.completedFuture(null);
 	}
@@ -644,12 +676,13 @@ public abstract class TLCDebugger extends AbstractDebugger implements IDebugTarg
 	protected final LinkedList<TLCStackFrame> stack = new LinkedList<>();
 	
 	// Initialize the debugger to immediately halt on the first frame.
-	private volatile int targetLevel = 1;
+	private volatile TLCStackFrame sourceFrame;
 	private volatile Step step = Step.In;
 	private volatile Granularity granularity = Granularity.Formula;
 	
 	private volatile boolean haltExp;
 	private volatile boolean haltInv;
+	private volatile int haltUnsat;
 
 	private volatile boolean executionIsHalted = false;
 	
@@ -732,7 +765,22 @@ public abstract class TLCDebugger extends AbstractDebugger implements IDebugTarg
 			LOGGER.finer(String.format("%s Call popFrame: [%s], level: %s\n",
 					new String(new char[this.stack.size()]).replace('\0', '#'), expr, this.stack.size()));
 		}
-		final TLCStackFrame pop = stack.pop();
+		TLCStackFrame pop = stack.peek(); 
+		if (pop == sourceFrame) {
+			// Clear old step source/targets.
+			sourceFrame = null;
+			step = Step.In;
+			// Annotate the frame we are stepping out of/existing from as such. 
+			pop.setName("Exit: " + pop.getName());
+			pop.setPresentationHint(StackFramePresentationHint.SUBTLE);
+			// Pause the debugger (triggers a call of stackFrames by the front-end).
+			haltExecution(pop);
+			// Reset the frame's presentation if the user reverses the execution and the
+			// frame gets reused.
+			pop.setName("Exit: " + pop.getName().replace("Exit: ", ""));
+			pop.setPresentationHint(StackFramePresentationHint.NORMAL);
+		}
+		pop = stack.pop();
 		assert pop.matches(expr);
 		return this;
 	}
@@ -764,9 +812,7 @@ public abstract class TLCDebugger extends AbstractDebugger implements IDebugTarg
 
 	@Override
 	public synchronized IDebugTarget popFrame(Tool tool, SemanticNode expr, Context c, TLCState s) {
-		final TLCStackFrame pop = stack.pop();
-		assert pop.matches(expr);
-		return this;
+		return popFrame(tool, expr, c);
 	}
 
 	@Override
@@ -849,6 +895,26 @@ public abstract class TLCDebugger extends AbstractDebugger implements IDebugTarg
 			Action a, TLCState t, StatefulRuntimeException e) {
 		return popExceptionFrame(tool, expr, c, null, e);
 	}
+	
+	@Override
+	public synchronized IDebugTarget pushUnsatisfiedFrame(Tool tool, SemanticNode expr, Context c, TLCState state) {
+		final TLCStackFrame frame = new TLCStateStackFrame(stack.peek(), expr, c, tool, state);
+		stack.push(frame);
+		if (state.getLevel() >= haltUnsat) {
+			haltExecution(frame);
+		}
+		return this;
+	}
+	
+	@Override
+	public synchronized IDebugTarget pushUnsatisfiedFrame(Tool tool, SemanticNode expr, Context c, TLCState predecessor, Action a, TLCState state) {
+		final TLCStackFrame frame = new TLCActionStackFrame(stack.peek(), expr, c, tool, predecessor, a, state);
+		stack.push(frame);
+		if (state.getLevel() >= haltUnsat) {
+			haltExecution(frame);
+		}
+		return this;
+	}
 
 	@Override
 	public synchronized IDebugTarget markInvariantViolatedFrame(Tool debugTool, SemanticNode expr, Context c, TLCState predecessor, Action a, TLCState state, StatefulRuntimeException e) {
@@ -901,7 +967,7 @@ public abstract class TLCDebugger extends AbstractDebugger implements IDebugTarg
 		if (LOGGER.isLoggable(Level.FINER)) {
 			LOGGER.finer(String.format("%s(%s): [%s]\n", new String(new char[level]).replace('\0', '#'), level, frame.getNode()));
 		}
-		if (matches(step, targetLevel, level)) {
+		if (matches(step, sourceFrame, frame)) {
 			haltExecution(frame);
 		} else if (matches(frame)) {
 			// Calling pre/postHalt because stack frame decided to halt and might want to do
@@ -972,22 +1038,11 @@ public abstract class TLCDebugger extends AbstractDebugger implements IDebugTarg
 		return this.granularity;
 	}
 
-	private static boolean matches(Step dir, int targetLevel, int currentLevel) {
+	private static boolean matches(final Step dir, final TLCStackFrame sourceFrame, final TLCStackFrame currentFrame) {
 		if (dir == Step.In) {
-			// TODO With this conditional, step.in becomes continue when one steps into a
-			// leave frame.  The debuggers that I know don't continue in this case.
-//			if (currentLevel >= targetLevel) {
-				return true;
-//			}
-		} else if (dir == Step.Over) {
-			if (currentLevel == targetLevel) {
-				return true;
-			}
-		} else if (dir == Step.Out) {
-			// When stepping out, level has to be greater than or zero/0;
-			if (currentLevel < targetLevel || currentLevel == 0) {
-				return true;
-			}
+			return true;
+		} else if (sourceFrame != null && (dir == Step.Over || dir == Step.Out)) {
+			return sourceFrame.matches(currentFrame);
 		}
 		return false;
 	}
@@ -1001,9 +1056,19 @@ public abstract class TLCDebugger extends AbstractDebugger implements IDebugTarg
 		// i.e. best match for the given editor location.  The code here should then
 		// simple compare the two location instances.
 		// If no breakpoints are set, stream over an empty list.
-		return breakpoints.getOrDefault(frame.getNode().getLocation().source(), new ArrayList<>()).stream()
+		return breakpoints.getOrDefault(frame.getNode().getLocation().source(), new ArrayList<>(0)).stream()
 				.anyMatch(b -> {
-					return frame.matches(b);
+					if (!frame.matches(b)) {
+						return false;
+					}
+					TLCStackFrame parent = frame.parent;
+					while (parent != null) {
+						if (parent.matches(b)) {
+							return false;
+						}
+						parent = parent.parent;
+					}
+					return true;
 				});
 	}
 	

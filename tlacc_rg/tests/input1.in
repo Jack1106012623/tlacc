@@ -1,0 +1,16 @@
+@Msg.Type = Set
+@Msg.Var = msgs
+
+key1 = [value1,value2]
+key2 = [value2]
+
+for i in key1:
+    [send(i,0), rcv(i,*)]
+    for j in key2:
+        [send(0,j), rcv(*,j)]
+for i in key1:
+    [send(i,0), rcv(i,*)]
+    for j in key2:
+        [send(0,j), rcv(*,j)]
+        
+[send(1,2), NULL]

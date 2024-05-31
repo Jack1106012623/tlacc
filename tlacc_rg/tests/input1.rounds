@@ -1,0 +1,11 @@
+@Msg.Type=Set
+@Msg.Var=msgs
+[send(value1,0),rcv(value1,*)]
+[send(0,value2),rcv(*,value2)]
+[send(value2,0),rcv(value2,*)]
+[send(0,value2),rcv(*,value2)]
+[send(value1,0),rcv(value1,*)]
+[send(0,value2),rcv(*,value2)]
+[send(value2,0),rcv(value2,*)]
+[send(0,value2),rcv(*,value2)]
+[send(1,2),NULL]

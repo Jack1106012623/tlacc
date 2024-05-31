@@ -1,0 +1,6 @@
+[send(v1,n1),rcv(*,v1)]
+[NULL,rcv(v1,v4)]
+[send(v2,n1),rcv(*,v2)]
+[NULL,rcv(v2,v4)]
+[send(v3,n1),rcv(*,v3)]
+[NULL,rcv(v3,v4)]

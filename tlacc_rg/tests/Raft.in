@@ -1,0 +1,18 @@
+@Msg.Type = Fcn
+@Msg.Var = messages
+
+
+Server = [n1, n2, n3]
+Value = [v1, v2]
+
+for i in [1,2]:
+    [Timeout(n1),NULL]
+    [RequestVote(n1,*),CCHandleRequestVoteRequest(*,n1)]
+    [NULL,CCHandleRequestVoteResponse(n1,*)]
+    [BecomeLeader(n1),NULL]
+    for v in Value:
+        [ClientRequest(n1, v),NULL]
+        [AppendEntries(n1, *),CCHandleAppendEntriesRequest(*,n1)]
+        [NULL,CCHandleAppendEntriesResponse(n1,*)]
+        [AdvanceCommitIndex(n1),NULL]
+

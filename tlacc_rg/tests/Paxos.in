@@ -1,0 +1,13 @@
+@Msg.Type = Set
+@Msg.Var = msgs
+
+
+Acceptor = [a1, a2, a3]
+Value = [v1, v2]
+Ballot   = [0,1]
+
+for b in Ballot:
+    [Phase1a(b), Phase1b(*)]
+    [NULL,Phase2a(b,*)]
+    [NULL,Phase2b(*)]
+

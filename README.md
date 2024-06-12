@@ -14,6 +14,8 @@ The branch tlacc_v3 is doing some optimization to increase readability and effic
 
 Dir `tlacc_rg/` has a round generator written in python and some examples. -->
 
+命令参数：与TLC的命令参数一致，只需要额外添加参数`-rounds filename.rounds`，指示有损同步执行的定义。目前tlacc必须添加参数`-rounds`，若要运行原版TLC，需要使用TLC的Jar包，参见[TLC](https://github.com/tlaplus/tlaplus)。
+
 TODO
 ------------
 - Make the code easy to read and use.
